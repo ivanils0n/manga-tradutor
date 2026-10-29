@@ -36,6 +36,7 @@ import android.widget.TextView
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 class OverlayService : Service() {
     private lateinit var wm: WindowManager
@@ -168,7 +169,10 @@ class OverlayService : Service() {
             val modelo = prefs.getString("modelo", "deepseek-flash").orEmpty()
             Thread {
                 try {
-                    val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+                    // a API reduz para ~800x800 de qualquer jeito; mandar menor só acelera o upload
+                    val escala = sqrt(640_000.0 / (bmp.width * bmp.height)).coerceAtMost(1.0)
+                    val envio = Bitmap.createScaledBitmap(bmp, (bmp.width * escala).toInt(), (bmp.height * escala).toInt(), true)
+                    val jpeg = ByteArrayOutputStream().also { envio.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
                     val baloes = Tradutor.traduzir(jpeg, bmp.width, bmp.height, chave, modelo)
                     main.post {
                         if (baloes.isEmpty()) fim("Nenhum texto encontrado") else { fim(null); mostrar(baloes) }

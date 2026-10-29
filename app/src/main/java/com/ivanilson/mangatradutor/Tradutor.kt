@@ -29,6 +29,7 @@ object Tradutor {
         val corpo = JSONObject()
             .put("model", modelo)
             .put("response_format", JSONObject().put("type", "json_object"))
+            .put("thinking", JSONObject().put("type", "disabled")) // raciocínio é o que mais demora
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", conteudo)))
 
         val con = URL("https://api.deepseek.com/chat/completions").openConnection() as HttpURLConnection
