@@ -2,15 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:label="Manga Tradutor"
-        android:icon="@android:drawable/ic_menu_view"
-        android:theme="@android:style/Theme.Material.Light">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
             android:name=".MainActivity"
@@ -21,9 +19,18 @@
             </intent-filter>
         </activity>
 
+        <!-- Acessibilidade: tira o print sem o aviso vermelho de gravação e desenha o botão por cima dos apps -->
         <service
-            android:name=".OverlayService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:name=".TradutorService"
+            android:exported="true"
+            android:label="Manga Tradutor"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/acessibilidade" />
+        </service>
     </application>
 </manifest>

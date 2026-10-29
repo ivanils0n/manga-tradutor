@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="descricao_acessibilidade">Mostra o botão flutuante PT. O print da tela só é tirado quando você toca nele, e é enviado à DeepSeek para traduzir os balões. O app não lê nem guarda o conteúdo da tela fora disso.</string>
+</resources>

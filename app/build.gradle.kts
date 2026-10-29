@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ivanilson.mangatradutor"
-        minSdk = 26
+        minSdk = 30 // print pela acessibilidade (takeScreenshot) exige Android 11+
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
