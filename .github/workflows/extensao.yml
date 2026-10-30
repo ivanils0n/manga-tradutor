@@ -1,0 +1,30 @@
+name: Extensão (Chrome/Edge)
+
+on:
+  push:
+    branches: [main]
+    paths: ['extension/**', '.github/workflows/extensao.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tradutor.test.mjs
+      - name: Publicar extensão em Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip -r ../manga-tradutor-extensao.zip . -x 'tradutor.test.mjs'
+          gh release delete extensao --yes --cleanup-tag || true
+          gh release create extensao ../manga-tradutor-extensao.zip --title "Extensão – última versão" --notes "Gerado do commit ${{ github.sha }}" --target ${{ github.sha }} --latest=false

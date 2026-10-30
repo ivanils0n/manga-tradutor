@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Manga Tradutor",
+  "version": "1.0",
+  "description": "Traduz os balões do mangá aberto na aba para português, usando a API da DeepSeek.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://api.deepseek.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Traduzir página (Alt+T)" },
+  "options_page": "opcoes.html",
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+T" }, "description": "Traduzir página" }
+  }
+}

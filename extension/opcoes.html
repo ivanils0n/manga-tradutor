@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Manga Tradutor</title>
+<style>
+  body { font: 14px system-ui, sans-serif; background: #12141c; color: #ededf3; max-width: 420px; margin: 40px auto; padding: 0 16px; }
+  label { display: block; margin: 14px 0 6px; color: #a9acbd; }
+  input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #333849; background: #1e2130; color: inherit; }
+  button { margin-top: 18px; padding: 10px 20px; border: 0; border-radius: 8px; background: #6c7bff; color: #fff; font-weight: 600; cursor: pointer; }
+  #ok { margin-left: 10px; color: #7ddc9a; }
+</style>
+<h2>Manga Tradutor</h2>
+<label for="chave">Chave da API DeepSeek</label>
+<input id="chave" type="password" autocomplete="off">
+<label for="modelo">Modelo</label>
+<input id="modelo" placeholder="deepseek-flash">
+<button id="salvar">Salvar</button><span id="ok"></span>
+<p style="color:#a9acbd">Na página do mangá, clique no ícone da extensão ou aperte <b>Alt+T</b>. Clique num balão (ou Esc) para fechar.</p>
+<script src="opcoes.js"></script>
+</html>

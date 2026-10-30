@@ -1,12 +1,23 @@
 # Manga Tradutor
 
-App Android com botão flutuante: toque nele no app de mangá e os balões aparecem traduzidos para português, usando a API da DeepSeek.
+Traduz os balões de mangá para português usando a API da DeepSeek.
 
-## Instalar
-Abra **Releases → Última versão** no celular e baixe `manga-tradutor.apk`. Cada push na `main` gera um APK novo, que instala por cima do anterior.
+| Pasta | O que é | Download |
+|---|---|---|
+| `android/` | App Android com botão flutuante | Releases → **Android – última versão** → `manga-tradutor.apk` |
+| `extension/` | Extensão para Chrome/Edge no PC | Releases → **Extensão – última versão** → `manga-tradutor-extensao.zip` |
 
-## Usar
-1. Abra o app, cole a chave da DeepSeek e ligue **Botão flutuante**.
-2. Na primeira vez, ative **Manga Tradutor** em Acessibilidade (é por ela que o print é tirado, sem aviso de gravação).
-3. No app de mangá, toque no **PT**. Toque na tradução para fechar.
-4. Segure o **PT** (vibra) para abrir o menu: traduzir ou desativar o botão. Arraste para mover.
+Cada push na `main` gera de novo só a parte que mudou.
+
+## Android
+1. Baixe o APK no celular e instale (instala por cima do anterior).
+2. Abra o app, cole a chave da DeepSeek e ligue **Botão flutuante**.
+3. Na primeira vez, ative **Manga Tradutor** em Acessibilidade (é por ela que o print é tirado, sem aviso de gravação).
+4. No app de mangá, toque no **PT**. Toque na tradução para fechar.
+5. Segure o **PT** (vibra) para abrir o menu: traduzir ou desativar o botão. Arraste para mover.
+
+## Extensão (PC)
+1. Baixe e extraia o `.zip` numa pasta fixa.
+2. Abra `chrome://extensions` (ou `edge://extensions`), ligue **Modo do desenvolvedor** e clique em **Carregar sem compactação**, escolhendo a pasta.
+3. Na primeira vez que clicar no ícone, abre a tela para colar a chave da DeepSeek.
+4. Na página do mangá, clique no ícone ou aperte **Alt+T**. Clique num balão (ou **Esc**) para fechar.
