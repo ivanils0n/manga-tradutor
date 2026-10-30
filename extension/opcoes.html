@@ -162,7 +162,11 @@
         <label><input type="radio" name="fonte" value="sistema"><span class="amostra" style="font-family:'Segoe UI',system-ui">Ei! Espera aí!</span><small>Simples</small></label>
       </div>
     </div>
-    <div class="campo">
+    <label class="opcao">
+      <span><b>Uma chamada por balão</b><small>Na tela, cada balão (modo inglês) ou faixa da página vai numa chamada própria, todas ao mesmo tempo: a página inteira aparece quase junto. Gasta mais tokens de entrada; as páginas adiantadas continuam juntas. Se a API avisar limite por minuto, volta sozinho a uma chamada por página.</small></span>
+      <span class="chave-liga"><input type="checkbox" id="porBalao"><span></span></span>
+    </label>
+    <div class="campo" style="margin-top:14px">
       <label for="adiantar">Traduzir ao rolar: adiantar</label>
       <select id="adiantar">
         <option value="tela">Só o que está na tela</option>

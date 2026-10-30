@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar, mesclar, sobreposicao, textoContexto,
   montarPromptTexto, itensTexto, interpretarTexto, parciaisTexto, nomesDe, juntarGlossario, obraDoTitulo,
-  preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel,
+  preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel, faixasPorVaos,
 } from "./tradutor.js";
 import { chamar } from "./provedores.js";
 
@@ -231,4 +231,25 @@ assert.deepEqual(juntarGlossario([["Bob", "Beto"], ["Ann", "Ana"]], [["bob", "Ro
 assert.equal(obraDoTitulo("One Piece - Chapter 1100 - MangaDex", "s"), "s|one piece");
 assert.equal(obraDoTitulo("One Piece Capítulo 12", "s"), "s|one piece");
 assert.equal(obraDoTitulo("Chapter 3 - Algo", "s"), "s|");
+// uma chamada por balão: a IA vê a página toda, mas devolve só o item pedido
+const pu = montarPromptTexto({ idioma: "pt-BR" }, true);
+assert.match(pu, /only the item asked at the end/);
+assert.match(pu, /\{"t":\["translation"\]\}/);
+assert.doesNotMatch(pu, /one string per item/);
+
+// ---- faixas pelos vãos entre os quadros: nunca na margem, nem no espaço entre linhas de texto
+{
+  const w = 600, h = 1200;
+  const img = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+  for (let i = 0; i < img.data.length; i += 4) img.data.fill((i * 7919) % 251, i, i + 3), (img.data[i + 3] = 255); // desenho
+  const liso = (t, b) => img.data.fill(255, t * w * 4, b * w * 4);
+  assert.deepEqual(faixasPorVaos(img), [[0, 1200]]); // sem vão: inteira
+  liso(0, 40); liso(1170, 1200); // margens
+  liso(600, 606); // entre linhas de texto
+  assert.deepEqual(faixasPorVaos(img), [[0, 1200]]);
+  liso(395, 425); liso(790, 822); // vãos entre quadros
+  assert.deepEqual(faixasPorVaos(img), [[0, 410], [410, 806], [806, 1200]]);
+  assert.deepEqual(faixasPorVaos(img, 500), [[0, 1200]]); // nenhum vão deixa as duas partes com 500 px
+  assert.deepEqual(faixasPorVaos({ ...img, height: 700, data: img.data.subarray(0, w * 700 * 4) }), [[0, 700]]); // baixa demais para dividir
+}
 console.log("ok");

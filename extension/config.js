@@ -44,6 +44,7 @@ export const PADRAO = {
   idioma: "pt-BR", honorificos: true, onomatopeias: false, maiusculas: false, fonte: "quadrinhos", glossario: "",
   adiantar: "todas", // modo ao rolar: "tela", "3", "10" (telas à frente) ou "todas" as páginas carregadas
   aprender: true, // glossário automático: nomes de personagens, lugares e golpes ficam iguais em toda a obra
+  porBalao: true, // o que está na tela: uma chamada por balão (modo inglês) ou por faixa da página, em paralelo
 };
 
 /** Configuração pronta para uso: provedor escolhido já com chave, modelo e URL resolvidos. */

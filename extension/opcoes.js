@@ -76,7 +76,7 @@ $("idioma").value = cfg.idioma;
 $("idioma").onchange = () => salvar({ idioma: $("idioma").value });
 $("adiantar").value = cfg.adiantar;
 $("adiantar").onchange = () => salvar({ adiantar: $("adiantar").value });
-for (const id of ["honorificos", "onomatopeias", "maiusculas"]) {
+for (const id of ["honorificos", "onomatopeias", "maiusculas", "porBalao"]) {
   $(id).checked = cfg[id] ?? PADRAO[id];
   $(id).onchange = () => salvar({ [id]: $(id).checked });
 }

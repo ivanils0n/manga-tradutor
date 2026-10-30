@@ -58,7 +58,14 @@ document.getElementById("config").onclick = (e) => {
   chrome.runtime.openOptionsPage();
 };
 
-// opções que valem por site (ao rolar, inglês, atalhos de uma tecla)
+// celular: o botão PT na página faz o papel dos atalhos de teclado
+if (matchMedia("(hover: none) and (pointer: coarse)").matches) {
+  document.getElementById("opcaoBotao").hidden = false;
+  document.getElementById("opcaoAtalhos").hidden = true;
+  for (const k of document.querySelectorAll(".acoes kbd")) k.hidden = true;
+}
+
+// opções que valem por site (ao rolar, inglês, atalhos de uma tecla, botão PT)
 chrome.tabs?.query({ active: true, currentWindow: true }).then(async ([tab]) => {
   const chaves = [...document.querySelectorAll("[data-site]")];
   let site = "";

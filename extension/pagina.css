@@ -12,7 +12,10 @@
   pointer-events: auto; cursor: pointer;
   will-change: transform;
   animation: surge .16s ease-out both;
+  /* no celular, segurar o dedo abre o nosso menu, não a seleção de texto do navegador */
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
 }
+:host([data-oculto]) .balao { display: none !important; }
 .cobre {
   position: absolute;
   background: var(--fundo);
@@ -55,7 +58,9 @@
 /* clique: mostra o original */
 .original { outline: 2px dashed color-mix(in srgb, var(--hanko) 70%, transparent); outline-offset: -2px; border-radius: 10px; background: none; box-shadow: none; }
 .original .cobre, .original .txt { visibility: hidden; }
-.balao:not(.original):hover { outline: 1.5px dashed color-mix(in srgb, var(--hanko) 55%, transparent); outline-offset: 3px; border-radius: 10px; }
+@media (hover: hover) { /* no celular o "hover" fica preso depois do toque */
+  .balao:not(.original):hover { outline: 1.5px dashed color-mix(in srgb, var(--hanko) 55%, transparent); outline-offset: 3px; border-radius: 10px; }
+}
 
 /* não coube nem com a letra mínima: caixa um pouco maior que o balão, mas legível */
 .expandido .txt {
@@ -86,6 +91,27 @@
 .menu button:hover, .menu button:focus-visible { background: var(--tinta); color: var(--papel); }
 .menu button:last-child:not(:first-child) { color: var(--hanko); }
 .menu button:last-child:not(:first-child):hover, .menu button:last-child:not(:first-child):focus-visible { background: var(--hanko); color: #fff; }
+@media (pointer: coarse) { .menu { min-width: 230px; } .menu button { padding: 13px 14px; font-size: 15px; } }
+
+/* ---------- botão PT (celular): carimbo vermelho com retícula, como o do app Android ---------- */
+.pt {
+  all: unset; box-sizing: border-box; position: fixed; left: 0; top: 0;
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: radial-gradient(rgb(255 255 255 / .2) 1px, transparent 1.5px) 0 0 / 5px 5px, var(--hanko);
+  color: #fff; border: 2.5px solid var(--tinta); box-shadow: 3px 3px 0 var(--tinta);
+  font: 900 19px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: .02em; text-shadow: 1px 1px 0 var(--tinta);
+  pointer-events: auto; cursor: pointer; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  transition: transform .08s, box-shadow .08s;
+}
+.pt:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--tinta); }
+.pt:focus-visible { outline: 3px solid var(--hanko); outline-offset: 3px; }
+.pt.ocupado::after { /* traduzindo: anel girando em volta */
+  content: ""; position: absolute; inset: -8px; border-radius: 50%;
+  border: 3px solid transparent; border-top-color: var(--tinta); border-right-color: var(--hanko);
+  animation: gira .8s linear infinite;
+}
 
 /* ---------- selo do modo automático ---------- */
 .fila {
@@ -137,6 +163,7 @@
 /* ---------- recorte ---------- */
 .capa {
   position: fixed; inset: 0; pointer-events: auto; cursor: crosshair; user-select: none;
+  touch-action: none; /* no celular, arrastar marca a área em vez de rolar a página */
   background-color: rgb(22 19 15 / .42);
   background-image: radial-gradient(rgb(22 19 15 / .35) 1px, transparent 1.6px);
   background-size: 5px 5px;
@@ -170,4 +197,5 @@
 @keyframes entra { from { opacity: 0; transform: translate(-50%, -6px); } }
 @media (prefers-reduced-motion: reduce) {
   .balao, .aviso, .roda, .vazio .cobre, .menu { animation: none; }
+  .pt.ocupado::after { animation-duration: 3s; }
 }

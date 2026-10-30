@@ -3,7 +3,7 @@ import { chamar } from "./provedores.js";
 import {
   montarPrompt, montarPromptTexto, itensTexto, interpretar, interpretarTexto, parciais, parciaisTexto, pedacos, amostrar,
   analisarBalao, mesclar, textoContexto, nomesDe, juntarGlossario, obraDoTitulo, preencherBordas, linhasDoTsv,
-  agruparLinhas, ocrConfiavel,
+  agruparLinhas, ocrConfiavel, faixasPorVaos,
 } from "./tradutor.js";
 
 // ---------- mensagens avulsas (popup e configurações) ----------
@@ -30,7 +30,6 @@ async function dispararNaAba(tabId, acao) {
   try {
     await chrome.tabs.sendMessage(tabId, msg);
   } catch {
-    await chrome.scripting.insertCSS({ target: { tabId }, files: ["fontes.css"] }).catch(() => {});
     await chrome.scripting.executeScript({ target: { tabId }, files: ["atalhos.js", "content.js"] }).catch(() => {});
     chrome.tabs.sendMessage(tabId, msg).catch(() => {});
   }
@@ -47,8 +46,7 @@ chrome.runtime.onConnect.addListener((porta) => {
   porta.onDisconnect.addListener(() => est.controle.abort());
   porta.onMessage.addListener((m) => {
     if (m.tipo === "prioridade") {
-      filaApi.repriorizar(est, m.url, m.prioridade);
-      filaLocal.repriorizar(est, m.url, m.prioridade);
+      for (const f of [filaApi, filaTela, filaLocal]) f.repriorizar(est, m.url, m.prioridade);
       return;
     }
     const tarefa = m.tipo === "imagem" ? traduzirImagem(est, m) : m.tipo === "print" ? traduzirPrint(est, m) : null;
@@ -101,11 +99,33 @@ function criarFila(limite) {
   f.ativos = () => ativos;
   return f;
 }
-const filaApi = criarFila(4); // chamadas à IA
+const filaApi = criarFila(4); // chamadas à IA das páginas adiantadas
+const filaTela = criarFila(8); // chamadas do que está na tela (uma por balão ou faixa): não esperam as adiantadas
+const filaIa = (prioridade) => (prioridade < 1 ? filaTela : filaApi);
 const filaLocal = criarFila(2); // baixar, recortar e ler (OCR) no PC: limita memória e processador
 // o Chrome desliga o service worker parado há 30 s; uma chamada de API a cada 20 s o mantém vivo
 // enquanto uma resposta lenta (modelos que "pensam") ainda está chegando
-setInterval(() => { if (filaApi.ativos() || filaLocal.ativos()) chrome.runtime.getPlatformInfo(); }, 20000);
+setInterval(() => {
+  if (filaApi.ativos() || filaTela.ativos() || filaLocal.ativos()) chrome.runtime.getPlatformInfo();
+}, 20000);
+
+// Uma chamada por balão/faixa multiplica as chamadas por minuto. Se a API responder "limite" (429), este
+// modelo volta a uma chamada por pedaço até o navegador fechar (planos grátis do Gemini, Claude nível 1…).
+const semParalelo = new Set();
+chrome.storage.session.get("semParalelo").then((s) => { for (const k of s.semParalelo || []) semParalelo.add(k); }, () => {});
+const paralelo = (cfg) => cfg.porBalao && cfg.provedor !== "ollama" && !semParalelo.has(`${cfg.url}|${cfg.modelo}`);
+async function chamarIa(cfg, pedido, opcoes) {
+  try {
+    return await chamar(cfg, pedido, opcoes);
+  } catch (e) {
+    const modelo = `${cfg.url}|${cfg.modelo}`;
+    if (e.status === 429 && !semParalelo.has(modelo)) {
+      semParalelo.add(modelo);
+      chrome.storage.session.set({ semParalelo: [...semParalelo] }).catch(() => {});
+    }
+    throw e;
+  }
+}
 
 const abortado = () => new DOMException("cancelado", "AbortError");
 
@@ -187,7 +207,7 @@ async function podar(limite = LIMITE_CACHE) {
     tx.onerror = () => ok(apagados);
   });
 }
-globalThis.mtDiagnostico = { cache, podar }; // para os testes conferirem o limite do cache
+globalThis.mtDiagnostico = { cache, podar, lerOcr: (c) => lerOcr(c) }; // para os testes (limite do cache, OCR)
 
 // ---------- contador de uso (chamadas, tokens, economia do cache) ----------
 const usoNovo = () => ({ chamadas: 0, entrada: 0, saida: 0, cache: 0, ocr: 0, estimado: 0 });
@@ -231,9 +251,12 @@ function registrar(est, cfg, obra, resposta, uso, textos) {
   contarUso("saida", uso.saida || 0);
   if (uso.estimado) contarUso("estimado");
   if (cfg.aprender) aprenderNomes(obra, nomesDe(resposta));
+  lembrar(est, textos);
+  chrome.storage.session.set({ ultimaResposta: resposta.slice(0, 4000) }).catch(() => {});
+}
+function lembrar(est, textos) {
   for (const t of textos) if (t) est.contexto.push(t.slice(0, 90));
   est.contexto.splice(0, Math.max(0, est.contexto.length - 8));
-  chrome.storage.session.set({ ultimaResposta: resposta.slice(0, 4000) }).catch(() => {});
 }
 
 // ---------- ler um pedaço: IA com imagem, ou OCR no PC + IA só com texto (inglês) ----------
@@ -263,19 +286,35 @@ async function lerPedaco(est, cfg, r, { prioridade, obra, dono, aoParcial }) {
     return base.map((e, i) => ({ ...e, texto: traduzidos[i] })).filter((e) => e.texto);
   }
 
+  // IA com imagem. Na tela, o pedaço vai em faixas cortadas nos vãos entre os quadros, todas ao mesmo
+  // tempo: cada chamada só escreve os balões da sua faixa, então tudo chega bem antes.
   const coords = cfg.def.coords || "xy";
   const prompt = montarPrompt(await comGlossario(cfg, obra), coords);
-  const imagem = await paraDataUrl(await r.canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
-  const daIa = (bs) => bs.map((b) => entrada({ l: b.l * r.tw, t: b.t * r.th, r: b.r * r.tw, b: b.b * r.th }, b.texto));
-  const uso = {};
-  const resposta = await filaApi(prioridade, () => {
-    if (est.controle.signal.aborted) throw abortado();
-    return chamar(cfg, { prompt, imagem, depois: textoContexto(est.contexto) },
-      { sinal: est.controle.signal, uso, aoTexto: (acum) => aoParcial(daIa(parciais(acum, coords))) });
-  }, dono);
-  const lidoIa = interpretar(resposta, coords);
-  registrar(est, cfg, obra, resposta, uso, lidoIa.map((b) => b.texto));
-  return daIa(lidoIa);
+  const faixas = (prioridade < 1 && paralelo(cfg) ? faixasPorVaos(r.pixels) : [[0, r.th]])
+    .filter(([y0, y1]) => y1 - y0 === r.th || amostrar(r.pixels, { x: 0, y: y0, w: r.tw, h: y1 - y0 }).desvio >= 4);
+  const listas = faixas.map(() => []);
+  const lidas = await Promise.all(faixas.map(async ([y0, y1], i) => {
+    const alt = y1 - y0;
+    let canvas = r.canvas;
+    if (alt !== r.th) {
+      canvas = new OffscreenCanvas(r.tw, alt);
+      canvas.getContext("2d").drawImage(r.canvas, 0, y0, r.tw, alt, 0, 0, r.tw, alt);
+    }
+    const imagem = await paraDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
+    const daIa = (bs) => bs.map((b) => entrada({ l: b.l * r.tw, t: y0 + b.t * alt, r: b.r * r.tw, b: y0 + b.b * alt }, b.texto));
+    const uso = {};
+    const resposta = await filaIa(prioridade)(prioridade, () => {
+      if (est.controle.signal.aborted) throw abortado();
+      return chamarIa(cfg, { prompt, imagem, depois: textoContexto(est.contexto) }, {
+        sinal: est.controle.signal, uso,
+        aoTexto: (acum) => { listas[i] = daIa(parciais(acum, coords)); aoParcial(listas.flat()); },
+      });
+    }, dono);
+    const lidoIa = interpretar(resposta, coords);
+    registrar(est, cfg, obra, resposta, uso, lidoIa.map((b) => b.texto));
+    return (listas[i] = daIa(lidoIa));
+  }));
+  return lidas.flat();
 }
 
 /**
@@ -283,6 +322,7 @@ async function lerPedaco(est, cfg, r, { prioridade, obra, dono, aoParcial }) {
  * instante e vão juntas numa chamada só (menos chamadas, e a IA vê o diálogo em sequência).
  */
 function traduzirTextos(est, cfg, textos, prioridade, obra, aoParcial) {
+  if (prioridade < 1 && textos.length > 1 && paralelo(cfg)) return traduzirPorBalao(est, cfg, textos, prioridade, obra, aoParcial);
   return new Promise((ok, falha) => {
     const job = { textos, aoParcial, ok, falha, prioridade, obra };
     if (prioridade <= 0) return despachar(est, cfg, [job]);
@@ -303,9 +343,10 @@ async function despachar(est, cfg, jobs) {
     const prompt = montarPromptTexto(await comGlossario(cfg, obra));
     const depois = [itensTexto(todos), textoContexto(est.contexto)].filter(Boolean).join("\n");
     const uso = {};
-    const resposta = await filaApi(Math.min(...jobs.map((j) => j.prioridade)), () => {
+    const prioridade = Math.min(...jobs.map((j) => j.prioridade));
+    const resposta = await filaIa(prioridade)(prioridade, () => {
       if (est.controle.signal.aborted) throw abortado();
-      return chamar(cfg, { prompt, depois }, {
+      return chamarIa(cfg, { prompt, depois }, {
         sinal: est.controle.signal, uso,
         aoTexto: (acum) => {
           const p = parciaisTexto(acum);
@@ -323,10 +364,42 @@ async function despachar(est, cfg, jobs) {
   }
 }
 
+/**
+ * O que está na tela, no modo inglês: uma chamada por balão, todas ao mesmo tempo. Cada uma vê os
+ * balões da página inteira (para a tradução ficar coerente), mas escreve só o seu: o último balão
+ * chega quase junto com o primeiro, em vez de esperar a IA escrever todos em sequência.
+ */
+async function traduzirPorBalao(est, cfg, textos, prioridade, obra, aoParcial) {
+  const comNomes = await comGlossario(cfg, obra);
+  const pagina = [itensTexto(textos), textoContexto(est.contexto)].filter(Boolean).join("\n");
+  const parcial = textos.map(() => "");
+  const traduzidos = await Promise.all(textos.map(async (_, i) => {
+    // só a primeira anota nomes novos da obra: as outras repetiriam os mesmos (tokens à toa)
+    const prompt = montarPromptTexto({ ...comNomes, aprender: comNomes.aprender && i === 0 }, true);
+    const uso = {};
+    const resposta = await filaTela(prioridade, () => {
+      if (est.controle.signal.aborted) throw abortado();
+      return chamarIa(cfg, { prompt, depois: `${pagina}\nTranslate item ${i + 1}.` }, {
+        sinal: est.controle.signal, uso,
+        aoTexto: (acum) => { parcial[i] = parciaisTexto(acum)[0] ?? ""; aoParcial(parcial.slice()); },
+      });
+    });
+    registrar(est, cfg, obra, resposta, uso, []);
+    return (parcial[i] = interpretarTexto(resposta, 1)[0]);
+  }));
+  lembrar(est, traduzidos); // na ordem de leitura, não na ordem em que as respostas chegaram
+  return traduzidos;
+}
+
 // ---------- OCR (Tesseract) num documento invisível da extensão ----------
 let ocrPronto = null;
 function garantirOcr() {
   return (ocrPronto ??= (async () => {
+    if (!chrome.offscreen) { // Firefox: o background é uma página; o documento do OCR entra nela como iframe
+      const f = document.createElement("iframe");
+      await new Promise((ok, falha) => { f.onload = ok; f.onerror = falha; f.src = "ocr.html"; document.body.appendChild(f); });
+      return;
+    }
     const existe = (await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] })).length;
     if (!existe) {
       await chrome.offscreen.createDocument({
@@ -372,9 +445,12 @@ async function traduzirImagem(est, m) {
   const cfg = await configPronta(m.manual);
   const obra = obraDe(est, m);
   const idUrl = hashTexto(m.url);
-  const [y0, y1] = m.faixa;
-  const partes = pedacos({ x: 0, y: 0, w: m.w, h: m.h }).map((q, i) => ({ ...q, i }))
-    .filter((q) => q.dono.y1 > y0 * m.h && q.dono.y0 < y1 * m.h);
+  const [y0, y1] = m.faixa || [0, 1];
+  // recorte (m.area, em pixels da imagem): só a parte marcada; senão, a faixa pedida da imagem inteira
+  const partes = m.area
+    ? pedacos(m.area).map((q) => ({ ...q, i: `a${q.x},${q.y}` }))
+    : pedacos({ x: 0, y: 0, w: m.w, h: m.h }).map((q, i) => ({ ...q, i }))
+      .filter((q) => q.dono.y1 > y0 * m.h && q.dono.y0 < y1 * m.h);
 
   const listas = partes.map(() => []);
   let prontos = 0;
@@ -496,7 +572,7 @@ async function liberarReferer(url, pagina) {
   if (referers.get(host) === referer) return;
   referers.set(host, referer);
   const id = 1 + (parseInt(hashTexto(host), 36) % 100000);
-  await chrome.declarativeNetRequest.updateSessionRules({
+  await chrome.declarativeNetRequest?.updateSessionRules({
     removeRuleIds: [id],
     addRules: [{
       id, priority: 1,

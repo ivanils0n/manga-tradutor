@@ -43,18 +43,22 @@ export function montarPrompt(o, coords = "xy") {
 /**
  * Prompt do modo inglês: o texto já foi lido no PC (Tesseract), então a IA recebe só texto, corrige os
  * erros de leitura e traduz. Sem imagem a chamada fica bem mais barata.
+ * `unico`: uma chamada por balão. A IA vê todos os itens da página (contexto), mas escreve só o pedido no fim.
  */
-export function montarPromptTexto(o) {
+export function montarPromptTexto(o, unico = false) {
   const glossario = textoGlossario(o);
   return [
     "English manga/manhwa text read by OCR, so it may have recognition errors (| for I, broken or missing letters)."
       + " Each numbered item is one speech bubble or caption, in reading order.",
-    `Fix the OCR errors and translate each item into natural, fluent ${LINGUA[o.idioma] || o.idioma}, like a professional`
+    `Fix the OCR errors and translate ${unico ? "only the item asked at the end (the other items are context)" : "each item"}`
+      + ` into natural, fluent ${LINGUA[o.idioma] || o.idioma}, like a professional`
       + " scanlation: keep each character's voice and the scene's context, keep it short to fit the bubble."
       + (o.honorificos ? " Keep Japanese honorifics (-san, -kun, -chan, -sama, senpai)." : ""),
     glossario && `Glossary, always use: ${glossario}`,
-    'Reply ONLY with JSON: {"t":["translation 1","translation 2"]}, exactly one string per item, same order.'
-      + ' Use "" for an item that is only OCR noise' + (o.onomatopeias ? "." : " or a sound effect.") + (o.aprender ? NOMES : ""),
+    (unico
+      ? 'Reply ONLY with JSON: {"t":["translation"]}. Use "" if it is only OCR noise'
+      : 'Reply ONLY with JSON: {"t":["translation 1","translation 2"]}, exactly one string per item, same order.'
+        + ' Use "" for an item that is only OCR noise') + (o.onomatopeias ? "." : " or a sound effect.") + (o.aprender ? NOMES : ""),
   ].filter(Boolean).join("\n");
 }
 
@@ -210,6 +214,49 @@ export function pedacos(a, lado = 1280, sobra = 0.2) {
   };
   const xs = eixo(a.x, a.w), ys = eixo(a.y, a.h);
   return ys.flatMap((y) => xs.map((x) => ({ x: x.p, y: y.p, w: x.t, h: y.t, dono: { x0: x.d0, x1: x.d1, y0: y.d0, y1: y.d1 } })));
+}
+
+/**
+ * Faixas de um pedaço para traduzir em paralelo (uma chamada por faixa). Só corta nos vãos entre os
+ * quadros: linhas inteiras de uma cor só, altas o bastante para não serem o espaço entre linhas de
+ * texto. Assim nenhum balão fica partido e não precisa de sobreposição (não gasta imagem a mais).
+ * Faixas de pelo menos `minimo` px, no máximo `max`; sem vão bom, volta o pedaço inteiro.
+ */
+export function faixasPorVaos(img, minimo = 360, max = 4) {
+  const { data, width: w, height: h } = img;
+  const n = Math.min(max, Math.floor(h / minimo));
+  if (n < 2) return [[0, h]];
+  const passo = Math.max(1, Math.floor(w / 200)); // ~200 amostras por linha
+  const vaoMin = Math.max(16, Math.round(w * 0.02));
+  const cortes = [];
+  let ini = -1;
+  for (let y = 0; y <= h; y++) {
+    let lisa = y < h;
+    for (let x = 0, lo = 255, hi = 0; lisa && x < w; x += passo) {
+      const i = (y * w + x) * 4;
+      const l = (data[i] * 2 + data[i + 1] * 5 + data[i + 2]) >> 3;
+      if (l < lo) lo = l;
+      if (l > hi) hi = l;
+      if (hi - lo > 24) lisa = false;
+    }
+    if (lisa && ini < 0) ini = y;
+    else if (!lisa && ini >= 0) {
+      if (ini > 0 && y < h && y - ini >= vaoMin) cortes.push(Math.round((ini + y) / 2)); // margem de cima/baixo não conta
+      ini = -1;
+    }
+  }
+  const faixas = [];
+  let y0 = 0;
+  for (let k = n; k > 1; k--) { // o corte mais perto de dividir o que falta em k partes iguais
+    const alvo = y0 + (h - y0) / k;
+    let c = -1;
+    for (const v of cortes) if (v - y0 >= minimo && h - v >= minimo && (c < 0 || Math.abs(v - alvo) < Math.abs(c - alvo))) c = v;
+    if (c < 0) break;
+    faixas.push([y0, c]);
+    y0 = c;
+  }
+  faixas.push([y0, h]);
+  return faixas;
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Manga Tradutor",
-  "version": "2.3",
+  "version": "2.4",
   "description": "Traduz balões de mangá, manhwa e manhua direto na página, com a IA que você escolher (DeepSeek, Gemini, OpenAI, Claude, OpenRouter ou Ollama).",
   "permissions": [
     "scripting",
@@ -39,9 +39,6 @@
       "js": [
         "atalhos.js",
         "content.js"
-      ],
-      "css": [
-        "fontes.css"
       ],
       "run_at": "document_idle"
     }

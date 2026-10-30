@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="estilo.css">
 <style>
   body { width: 330px; padding: 14px 14px 12px; }
+  @media (hover: none) { body { width: auto; } } /* celular: o popup ocupa a tela */
   header {
     position: relative; display: flex; align-items: center; gap: 11px;
     padding: 12px 12px 12px 10px; margin-bottom: 14px; overflow: hidden;
@@ -39,6 +40,7 @@
   .opcao-site b { display: block; font-size: 13.5px; }
   .opcao-site small { color: var(--tinta-suave); font-size: 12px; }
   .opcao-site .chave-liga { margin-left: auto; }
+  [hidden] { display: none !important; }
   .uso-hoje { margin-top: 2px; font-size: 11.5px; color: var(--tinta-suave); }
   .novidade {
     display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px;
@@ -88,12 +90,16 @@
     <span class="chave-liga"><input type="checkbox" data-site="auto"><span></span></span>
   </label>
   <label class="opcao-site">
-    <span><b>Páginas em inglês</b><small>lê no PC: mais rápido e mais barato</small></span>
+    <span><b>Páginas em inglês</b><small>lê no aparelho: mais rápido e mais barato</small></span>
     <span class="chave-liga"><input type="checkbox" data-site="ingles"><span></span></span>
   </label>
-  <label class="opcao-site">
+  <label class="opcao-site" id="opcaoAtalhos">
     <span><b>Atalhos de uma tecla</b><small>desligue se brigarem com os do site</small></span>
     <span class="chave-liga"><input type="checkbox" data-site="semTeclaUnica" data-invertido><span></span></span>
+  </label>
+  <label class="opcao-site" id="opcaoBotao" hidden>
+    <span><b>Botão PT na tela</b><small>toque traduz · segure para o menu</small></span>
+    <span class="chave-liga"><input type="checkbox" data-site="semBotao" data-invertido><span></span></span>
   </label>
 </section>
 

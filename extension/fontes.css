@@ -1,7 +1,0 @@
-/* Injetado em toda página (pelo manifest): a fonte dos balões precisa estar no documento para valer dentro do shadow DOM. */
-@font-face {
-  font-family: "MT Quadrinhos";
-  src: url("chrome-extension://__MSG_@@extension_id__/fontes/comic-neue-bold.woff") format("woff");
-  font-weight: 100 900;
-  font-display: block;
-}

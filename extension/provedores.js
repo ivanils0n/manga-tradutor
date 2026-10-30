@@ -29,7 +29,7 @@ export async function chamar(cfg, pedido, { aoTexto = () => {}, sinal, uso = {} 
     // parâmetro opcional (temperatura, modo JSON, raciocínio…) que este modelo não aceita: tenta sem
     if (resp.status === 400 && extras) { extras = false; recusaExtras.add(chaveModelo); continue; }
     if ((resp.status === 429 || resp.status >= 500) && tentativa < 2) { await esperar(1200 * (tentativa + 1)); continue; }
-    throw new Error(mensagemErro(resp.status, corpo));
+    throw Object.assign(new Error(mensagemErro(resp.status, corpo)), { status: resp.status });
   }
 }
 
