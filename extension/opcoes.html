@@ -152,6 +152,16 @@
       </div>
     </div>
     <div class="campo">
+      <label for="adiantar">Traduzir ao rolar: adiantar</label>
+      <select id="adiantar">
+        <option value="tela">Só o que está na tela</option>
+        <option value="3">As próximas 3 telas</option>
+        <option value="10">As próximas 10 telas</option>
+        <option value="todas">Todas as páginas que o site já carregou</option>
+      </select>
+      <p class="ajuda">Com o modo ao rolar ligado, as páginas de baixo já ficam traduzidas antes de você chegar nelas. Cada página é traduzida uma vez só.</p>
+    </div>
+    <div class="campo">
       <label for="glossario">Glossário</label>
       <textarea id="glossario" spellcheck="false" placeholder="Um por linha, original = tradução&#10;Gomu Gomu no Mi = Fruta da Borracha&#10;Kaizoku = Pirata"></textarea>
       <p class="ajuda">Nomes, golpes e termos que devem sair sempre do mesmo jeito.</p>
@@ -179,7 +189,7 @@
       <button class="secundario" data-limpar="alternar">Limpar</button>
       <div class="aviso-atalho" data-aviso="alternar" role="status"></div>
     </div>
-    <p class="ajuda">Na página: clique num balão para ver o original; <kbd>Esc</kbd> apaga as traduções.</p>
+    <p class="ajuda">Na página: clique num balão para ver o original; botão direito para remover.</p>
   </section>
 
   <section class="quadro">
@@ -189,7 +199,8 @@
       <summary>Última resposta da IA</summary>
       <pre id="ultima">Nada ainda nesta sessão do navegador.</pre>
     </details>
-    <p style="margin:14px 0 0"><button class="secundario" id="limparCache">Limpar traduções guardadas</button>
+    <p class="ajuda" style="margin-top:14px">As traduções ficam guardadas neste navegador (valem para qualquer IA): voltar a uma página não gasta tokens de novo.</p>
+    <p style="margin:10px 0 0"><button class="secundario" id="limparCache">Limpar traduções guardadas</button>
       <span class="ajuda" id="cacheOk" style="margin-left:8px"></span></p>
   </section>
 </main>

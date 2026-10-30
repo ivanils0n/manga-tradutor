@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar } from "./tradutor.js";
+import { interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar, mesclar, sobreposicao, textoContexto } from "./tradutor.js";
 import { chamar } from "./provedores.js";
 
 const perto = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
@@ -35,7 +35,7 @@ assert.match(montarPrompt({ idioma: "en" }, "yx"), /ymin,xmin,ymax,xmax/);
 // ---- pedaços: cobrem a área, nenhum passa do lado, donos sem buraco
 for (const a of [{ x: 0, y: 0, w: 800, h: 900 }, { x: 100, y: 50, w: 1900, h: 1000 }, { x: 0, y: 0, w: 1200, h: 3100 }]) {
   const ps = pedacos(a);
-  for (const q of ps) assert.ok(q.w <= 1100 && q.h <= 1100 && q.x >= a.x && q.y >= a.y, "pedaço fora");
+  for (const q of ps) assert.ok(q.w <= 1280 && q.h <= 1280 && q.x >= a.x && q.y >= a.y, "pedaço fora");
   for (const eixo of ["x", "y"]) {
     const d = [...new Set(ps.map((q) => q.dono[eixo + "0"] + ":" + q.dono[eixo + "1"]))].map((s) => s.split(":").map(Number));
     perto(d[0][0], a[eixo]);
@@ -111,4 +111,29 @@ assert.equal(await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", ur
 assert.equal(chamadas, 2);
 globalThis.fetch = async () => new Response('{"error":{"message":"bad key"}}', { status: 401 });
 await assert.rejects(chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, "data:,", "P"), /Chave da API inválida/);
+// ---- junção de partes do mesmo balão (linhas/colunas devolvidas separadas)
+const item = (chave, texto, area, cobre = area) => ({ chave, texto, fundo: "#fff", claro: true, uniforme: true, area, cobre });
+const juntos = mesclar([
+  item("a", "Ei,", { l: 0.1, t: 0.1, r: 0.4, b: 0.3 }, { l: 0.2, t: 0.12, r: 0.25, b: 0.28 }),
+  item("b", "espera!", { l: 0.12, t: 0.1, r: 0.42, b: 0.3 }, { l: 0.27, t: 0.12, r: 0.32, b: 0.28 }),
+  item("c", "Outro balão", { l: 0.6, t: 0.6, r: 0.9, b: 0.8 }),
+]);
+assert.equal(juntos.length, 2);
+assert.equal(juntos[0].chave, "a"); // a chave do primeiro fica: o balão não pisca no streaming
+assert.equal(juntos[0].texto, "Ei, espera!");
+assert.deepEqual(juntos[0].cobre, { l: 0.2, t: 0.12, r: 0.32, b: 0.28 });
+perto(sobreposicao({ l: 0, t: 0, r: 1, b: 1 }, { l: 0.5, t: 0.5, r: 1.5, b: 1.5 }), 0.25);
+assert.equal(sobreposicao({ l: 0, t: 0, r: 1, b: 1 }, { l: 2, t: 2, r: 3, b: 3 }), 0);
+assert.equal(textoContexto([]), "");
+assert.match(textoContexto(["Oi", "Tudo bem?"]), /Oi \/ Tudo bem\?/);
+
+// contexto vai depois da imagem (o começo da mensagem fica igual entre chamadas: cache de prefixo)
+let ultimoCorpo;
+globalThis.fetch = async (_u, init) => {
+  ultimoCorpo = JSON.parse(init.body);
+  return new Response(JSON.stringify({ choices: [{ message: { content: '{"t":[]}' } }] }), { headers: { "content-type": "application/json" } });
+};
+await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, "data:image/jpeg;base64,AA", "P", undefined, undefined, "CTX");
+assert.deepEqual(ultimoCorpo.messages[0].content.map((c) => c.type), ["text", "image_url", "text"]);
+assert.equal(ultimoCorpo.messages[0].content[2].text, "CTX");
 console.log("ok");

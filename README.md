@@ -22,11 +22,13 @@ Cada push na `main` gera de novo só a parte que mudou.
 3. Clique no ícone → **Configurações**: escolha a IA (DeepSeek, Gemini, OpenAI, Claude, OpenRouter, Ollama ou outra compatível com OpenAI), cole a chave e use **Testar conexão**.
 4. Na página do mangá:
    - **T** traduz o que está na tela; **R** recorta só uma parte; **O** mostra/oculta as traduções (dá para trocar por qualquer tecla, combinação ou botão do mouse).
-   - Os balões são cobertos com a cor do próprio balão assim que aparecem, e a tradução entra por cima conforme chega.
-   - Clique num balão para ver o original; **Esc** apaga as traduções.
-   - **Traduzir ao rolar** (no ícone) traduz sozinho cada parte nova da página, ideal para webtoon.
+   - As traduções ficam na página até você tirar: **botão direito** no balão → remover (ou remover todos). Clique simples mostra o original.
+   - Os balões são cobertos com a cor do próprio balão assim que aparecem, e a tradução entra por cima conforme chega. Se o balão for pequeno demais, a tradução ganha uma caixa um pouco maior para continuar legível.
+   - **Traduzir ao rolar** (no ícone) traduz a tela e já adianta as páginas que o site carregou mais abaixo (quantas, nas configurações).
 
 ### Como funciona
-- A tela é cortada em pedaços de até ~1100 px, mandados em paralelo e em streaming. Pedaços em branco não vão para a API, e o que já foi traduzido fica guardado até fechar o navegador (não gasta tokens de novo).
-- A IA devolve a caixa do texto original e a tradução num JSON compacto. A extensão mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão (não só no do texto original).
-- Glossário, idioma de destino, honoríficos, onomatopeias e letras maiúsculas ficam nas configurações.
+- Cada página de mangá é traduzida a partir da própria imagem (baixada com o Referer do site), não de um print: não depende da rolagem e dá para traduzir páginas que ainda não apareceram. Canvas e imagens que o site não deixa baixar vão por print.
+- Páginas de até ~1280 px vão inteiras numa chamada; maiores são cortadas em pedaços, em paralelo e em streaming. Partes em branco não vão para a API.
+- Cada tradução fica guardada no navegador pelo endereço da imagem, valendo para qualquer IA: voltar a uma página, recarregar ou trocar de API não gasta tokens de novo.
+- As últimas falas vão junto como contexto, para nomes e tom ficarem coerentes entre páginas.
+- A IA devolve a caixa do texto original e a tradução num JSON compacto. A extensão mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão.

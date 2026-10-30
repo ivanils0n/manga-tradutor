@@ -36,7 +36,7 @@
     border: 2px dashed var(--tinta-suave); border-radius: 8px;
   }
   .linha-auto b { display: block; font-size: 13.5px; }
-  .linha-auto small { color: var(--tinta-suave); font-size: 12px; word-break: break-all; }
+  .linha-auto small { color: var(--tinta-suave); font-size: 12px; overflow-wrap: anywhere; }
   .linha-auto .chave-liga { margin-left: auto; }
 
   footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12.5px; }
@@ -71,7 +71,7 @@
 </div>
 
 <label class="linha-auto">
-  <span><b>Traduzir ao rolar</b><small id="site">neste site</small></span>
+  <span><b>Traduzir ao rolar</b><small>e adiantar as próximas páginas · <span id="site">neste site</span></small></span>
   <span class="chave-liga"><input type="checkbox" id="auto"><span></span></span>
 </label>
 

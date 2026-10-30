@@ -42,6 +42,7 @@ export const IDIOMAS = {
 export const PADRAO = {
   provedor: "deepseek", chaves: {}, modelos: {}, urls: {},
   idioma: "pt-BR", honorificos: true, onomatopeias: false, maiusculas: false, fonte: "quadrinhos", glossario: "",
+  adiantar: "todas", // modo ao rolar: "tela", "3", "10" (telas à frente) ou "todas" as páginas carregadas
 };
 
 /** Configuração pronta para uso: provedor escolhido já com chave, modelo e URL resolvidos. */

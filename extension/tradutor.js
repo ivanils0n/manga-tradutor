@@ -19,8 +19,9 @@ export function montarPrompt(o, coords = "xy") {
     "Manga/manhwa/manhua image. Find every speech bubble, thought bubble, narration box and text block" +
       (o.onomatopeias ? ", including sound effects." : ". Skip sound effects.") +
       " Skip watermarks, page numbers and website UI.",
+    "One entry per bubble/box: merge all its lines and columns into one text.",
     `Translate each into natural, fluent ${LINGUA[o.idioma] || o.idioma}, like a professional scanlation: ` +
-      "keep each character's voice and the scene's context, join text split across lines, keep it short to fit the bubble." +
+      "keep each character's voice and the scene's context, keep it short to fit the bubble." +
       (o.honorificos ? " Keep Japanese honorifics (-san, -kun, -chan, -sama, senpai)." : ""),
     glossario && `Glossary, always use: ${glossario}`,
     `Reply ONLY with JSON in reading order: {"t":[[${caixa},"translation"]]}`,
@@ -97,11 +98,12 @@ export function paraTela(baloes, r) {
 }
 
 /**
- * Divide a área {x,y,w,h} (pixels) em pedaços de até `lado` px, com sobreposição.
+ * Divide a área {x,y,w,h} (pixels) em pedaços de até `lado` px, com sobreposição. 1280 px cabe sem
+ * redução nas APIs (a DeepSeek só reduz acima de ~1300×1300) e deixa a maioria das páginas num pedaço só.
  * Cada pedaço tem `dono`: a parte onde um balão centrado nele pertence a ele (evita duplicar
  * balões que caem na sobreposição).
  */
-export function pedacos(a, lado = 1100, sobra = 0.25) {
+export function pedacos(a, lado = 1280, sobra = 0.2) {
   const eixo = (ini, tam) => {
     const n = Math.max(1, Math.ceil((tam - lado * sobra) / (lado * (1 - sobra))));
     const t = n === 1 ? tam : Math.min(tam, Math.ceil(tam / (n - (n - 1) * sobra)));
@@ -193,4 +195,37 @@ export function analisarBalao(img, c) {
 function mediana(v) {
   const s = v.slice().sort((a, b) => a - b);
   return s[s.length >> 1];
+}
+
+/** Linhas já traduzidas do capítulo, mandadas junto para manter nomes e tom coerentes entre pedaços. */
+export function textoContexto(linhas) {
+  return linhas.length ? `Earlier lines of this chapter, for consistent names and tone (do not output them): ${linhas.join(" / ")}` : "";
+}
+
+/**
+ * Junta itens do mesmo balão (o modelo às vezes devolve cada linha ou coluna separada): dois itens
+ * cujas áreas de balão se sobrepõem bastante são o mesmo balão. Itens: {chave, texto, cobre, area, ...}.
+ */
+export function mesclar(itens) {
+  const saida = [];
+  for (const it of itens) {
+    const alvo = saida.find((o) => sobreposicao(o.area, it.area) > 0.3);
+    if (!alvo) { saida.push({ ...it, cobre: { ...it.cobre }, area: { ...it.area } }); continue; }
+    alvo.texto = [alvo.texto, it.texto].filter(Boolean).join(" ");
+    alvo.uniforme = alvo.uniforme && it.uniforme;
+    for (const k of ["cobre", "area"]) {
+      alvo[k] = {
+        l: Math.min(alvo[k].l, it[k].l), t: Math.min(alvo[k].t, it[k].t),
+        r: Math.max(alvo[k].r, it[k].r), b: Math.max(alvo[k].b, it[k].b),
+      };
+    }
+  }
+  return saida;
+}
+
+/** Fração da menor caixa coberta pela interseção das duas. */
+export function sobreposicao(a, b) {
+  const w = Math.min(a.r, b.r) - Math.max(a.l, b.l), h = Math.min(a.b, b.b) - Math.max(a.t, b.t);
+  if (w <= 0 || h <= 0) return 0;
+  return (w * h) / Math.min((a.r - a.l) * (a.b - a.t), (b.r - b.l) * (b.b - b.t));
 }

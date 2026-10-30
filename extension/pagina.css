@@ -50,7 +50,50 @@
 /* clique: mostra o original */
 .original { outline: 2px dashed color-mix(in srgb, var(--hanko) 70%, transparent); outline-offset: -2px; border-radius: 10px; background: none; box-shadow: none; }
 .original .cobre, .original .txt { visibility: hidden; }
-.balao:not(.original):hover { filter: drop-shadow(0 0 1.5px var(--hanko)); }
+.balao:not(.original):hover { outline: 1.5px dashed color-mix(in srgb, var(--hanko) 55%, transparent); outline-offset: 3px; border-radius: 10px; }
+
+/* não coube nem com a letra mínima: caixa um pouco maior que o balão, mas legível */
+.expandido .txt {
+  inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: max(100%, 9em); height: auto; min-height: 100%;
+  padding: .4em .6em; border-radius: .7em;
+  background: var(--fundo);
+  box-shadow: 0 0 0 2px var(--fundo), 0 2px 10px #0004;
+  overflow: visible;
+}
+.expandido.sobre-arte { background: none; box-shadow: none; }
+.original.expandido .txt { visibility: hidden; }
+
+/* ---------- menu do botão direito ---------- */
+.menu {
+  position: fixed; min-width: 190px; padding: 5px;
+  display: grid; gap: 2px;
+  background: var(--papel); color: var(--tinta);
+  border: 2px solid var(--tinta); border-radius: 10px;
+  box-shadow: 4px 4px 0 var(--tinta);
+  pointer-events: auto;
+  animation: surge .1s ease-out;
+}
+.menu button {
+  all: unset; box-sizing: border-box; display: block; padding: 8px 12px; border-radius: 6px; cursor: pointer;
+  font: 600 13.5px "Segoe UI", system-ui, sans-serif;
+}
+.menu button:hover, .menu button:focus-visible { background: var(--tinta); color: var(--papel); }
+.menu button:last-child:not(:first-child) { color: var(--hanko); }
+.menu button:last-child:not(:first-child):hover, .menu button:last-child:not(:first-child):focus-visible { background: var(--hanko); color: #fff; }
+
+/* ---------- selo do modo automático ---------- */
+.fila {
+  position: fixed; right: 14px; bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 9px;
+  background: var(--papel); color: var(--tinta);
+  border: 2px solid var(--tinta); border-radius: 99px;
+  box-shadow: 3px 3px 0 var(--tinta);
+  font: 700 12px "Segoe UI", system-ui, sans-serif;
+  opacity: .92;
+}
+.fila .roda { width: 12px; height: 12px; }
 
 /* ---------- aviso (um balãozinho de fala) ---------- */
 .aviso {
@@ -121,5 +164,5 @@
 @keyframes gira { to { transform: rotate(360deg); } }
 @keyframes entra { from { opacity: 0; transform: translate(-50%, -6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .balao, .aviso, .roda, .vazio .cobre { animation: none; }
+  .balao, .aviso, .roda, .vazio .cobre, .menu { animation: none; }
 }

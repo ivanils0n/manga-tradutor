@@ -74,6 +74,8 @@ $("testar").onclick = async () => {
 $("idioma").innerHTML = Object.entries(IDIOMAS).map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
 $("idioma").value = cfg.idioma;
 $("idioma").onchange = () => salvar({ idioma: $("idioma").value });
+$("adiantar").value = cfg.adiantar;
+$("adiantar").onchange = () => salvar({ adiantar: $("adiantar").value });
 for (const id of ["honorificos", "onomatopeias", "maiusculas"]) {
   $(id).checked = cfg[id] ?? PADRAO[id];
   $(id).onchange = () => salvar({ [id]: $(id).checked });
@@ -176,6 +178,7 @@ chrome.storage.session.get("ultimaResposta").then(({ ultimaResposta }) => {
   if (ultimaResposta) $("ultima").textContent = ultimaResposta;
 });
 $("limparCache").onclick = async () => {
+  await chrome.runtime.sendMessage({ tipo: "limparCache" });
   await chrome.storage.session.clear();
-  $("cacheOk").textContent = "Pronto.";
+  $("cacheOk").textContent = "Pronto: as próximas traduções serão feitas de novo.";
 };

@@ -2,11 +2,11 @@
 
 const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-export async function chamar(cfg, imagem, prompt, aoTexto = () => {}, sinal) {
+export async function chamar(cfg, imagem, prompt, aoTexto = () => {}, sinal, contexto = "") {
   const base64 = imagem.slice(imagem.indexOf(",") + 1);
   let extras = true;
   for (let tentativa = 0; ; tentativa++) {
-    const req = montar(cfg, imagem, base64, prompt, extras);
+    const req = montar(cfg, imagem, base64, prompt, extras, contexto);
     const resp = await fetch(req.url, {
       method: "POST", headers: { "Content-Type": "application/json", ...req.headers },
       body: JSON.stringify(req.body), signal: sinal,
@@ -31,7 +31,9 @@ function mensagemErro(status, corpo) {
   return motivo ? `${motivo} — ${String(detalhe).slice(0, 160)}` : `API ${status}: ${String(detalhe).slice(0, 200)}`;
 }
 
-function montar(cfg, imagem, base64, prompt, extras) {
+// O contexto vai depois da imagem: o começo da mensagem (instruções + imagem) fica igual entre chamadas,
+// o que deixa as APIs com cache de prefixo (DeepSeek, OpenAI, Gemini) cobrarem menos.
+function montar(cfg, imagem, base64, prompt, extras, contexto) {
   const { def, modelo, chave, url } = cfg;
   if (def.tipo === "gemini") {
     const gc = { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json" };
@@ -42,7 +44,10 @@ function montar(cfg, imagem, base64, prompt, extras) {
       url: `${url}/v1beta/models/${encodeURIComponent(modelo)}:streamGenerateContent?alt=sse`,
       headers: { "x-goog-api-key": chave },
       body: {
-        contents: [{ role: "user", parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64 } }] }],
+        contents: [{
+          role: "user",
+          parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64 } }, ...(contexto ? [{ text: contexto }] : [])],
+        }],
         ...(extras && {
           generationConfig: gc,
           // cenas de luta e afins não devem bloquear a tradução
@@ -65,7 +70,7 @@ function montar(cfg, imagem, base64, prompt, extras) {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-            { type: "text", text: prompt },
+            { type: "text", text: contexto ? `${prompt}\n${contexto}` : prompt },
           ],
         }],
       },
@@ -82,6 +87,7 @@ function montar(cfg, imagem, base64, prompt, extras) {
         content: [
           { type: "text", text: prompt },
           { type: "image_url", image_url: { url: imagem, ...(extras && { detail: "high" }) } },
+          ...(contexto ? [{ type: "text", text: contexto }] : []),
         ],
       }],
     },
