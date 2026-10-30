@@ -18,7 +18,15 @@ Cada push na `main` gera de novo só a parte que mudou.
 
 ## Extensão (PC)
 1. Baixe e extraia o `.zip` numa pasta fixa.
-2. Abra `chrome://extensions` (ou `edge://extensions`), ligue **Modo do desenvolvedor** e clique em **Carregar sem compactação**, escolhendo a pasta.
-3. Clique no ícone da extensão → **Configurações**, cole a chave da DeepSeek e escolha os atalhos (uma tecla ou uma combinação, ex.: `F2` ou `Ctrl + Shift + Q`). Padrão: **Alt + T** traduz a página, **Alt + R** recorta uma parte.
-4. Os balões aparecem cobertos de branco assim que são encontrados, e a tradução entra por cima conforme chega. Clique num balão (ou **Esc**) para fechar.
-5. Depois de instalar ou atualizar, recarregue as abas que já estavam abertas.
+2. Abra `chrome://extensions` (ou `edge://extensions`), ligue **Modo do desenvolvedor** e clique em **Carregar sem compactação**, escolhendo a pasta. Depois de atualizar, clique em ↻ na extensão e recarregue as abas abertas.
+3. Clique no ícone → **Configurações**: escolha a IA (DeepSeek, Gemini, OpenAI, Claude, OpenRouter, Ollama ou outra compatível com OpenAI), cole a chave e use **Testar conexão**.
+4. Na página do mangá:
+   - **T** traduz o que está na tela; **R** recorta só uma parte; **O** mostra/oculta as traduções (dá para trocar por qualquer tecla, combinação ou botão do mouse).
+   - Os balões são cobertos com a cor do próprio balão assim que aparecem, e a tradução entra por cima conforme chega.
+   - Clique num balão para ver o original; **Esc** apaga as traduções.
+   - **Traduzir ao rolar** (no ícone) traduz sozinho cada parte nova da página, ideal para webtoon.
+
+### Como funciona
+- A tela é cortada em pedaços de até ~1100 px, mandados em paralelo e em streaming. Pedaços em branco não vão para a API, e o que já foi traduzido fica guardado até fechar o navegador (não gasta tokens de novo).
+- A IA devolve a caixa do texto original e a tradução num JSON compacto. A extensão mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão (não só no do texto original).
+- Glossário, idioma de destino, honoríficos, onomatopeias e letras maiúsculas ficam nas configurações.

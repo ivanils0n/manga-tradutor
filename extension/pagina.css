@@ -1,64 +1,125 @@
-/* Injetado na página do mangá. Tudo prefixado com mt- para não colidir com o site. */
-.mt-aviso {
-  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
-  z-index: 2147483647; display: flex; align-items: center; gap: 10px;
-  padding: 10px 18px 10px 14px; border-radius: 999px;
-  background: #181b25f2; color: #eceef6; border: 1px solid #ffffff1a;
-  box-shadow: 0 8px 30px #0006; backdrop-filter: blur(8px);
-  font: 600 14px "Segoe UI", system-ui, sans-serif;
-  animation: mt-entra .2s ease-out;
-}
-.mt-aviso.mt-erro { border-color: #f8717188; }
-.mt-aviso.mt-erro::before { content: "⚠"; color: #f87171; }
-.mt-roda {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 2.5px solid #ffffff26; border-top-color: #a855f7; border-right-color: #6366f1;
-  animation: mt-gira .7s linear infinite;
+/* Dentro do shadow DOM da página do mangá: o CSS do site não entra aqui, nem o nosso sai. */
+:host {
+  --papel: #fbf8f1;
+  --tinta: #16130f;
+  --hanko: #e2412e;
+  font-size: 16px;
 }
 
-.mt-balao {
-  position: absolute; z-index: 2147483646; box-sizing: border-box;
-  display: flex; align-items: center; justify-content: center; text-align: center;
-  padding: 6px 8px; border-radius: 14px; overflow: hidden; overflow-wrap: anywhere; cursor: pointer;
-  background: #fff; color: #15161c; border: 1.5px solid #6366f155;
-  box-shadow: 0 2px 10px #0003;
-  font-family: "Segoe UI", system-ui, sans-serif; font-weight: 650; line-height: 1.2;
-  animation: mt-surge .25s ease-out both;
+/* ---------- balões ---------- */
+.balao {
+  position: absolute; left: 0; top: 0;
+  pointer-events: auto; cursor: pointer;
+  will-change: transform;
+  animation: surge .16s ease-out both;
 }
-.mt-vazio::after {
-  content: ""; width: 34px; height: 8px; border-radius: 4px;
-  background: linear-gradient(90deg, #6366f155, #a855f7aa, #6366f155);
-  background-size: 200% 100%; animation: mt-brilho 1s linear infinite;
+.cobre {
+  position: absolute;
+  background: var(--fundo);
+  border-radius: 10px;
+  /* borda esfumada da mesma cor: cobre restos do texto original sem deixar um "recorte" visível */
+  box-shadow: 0 0 3px 4px var(--fundo);
 }
-.mt-balao:hover { border-color: #a855f7; box-shadow: 0 2px 14px #a855f744; }
+.txt {
+  position: absolute; inset: 0;
+  padding: 7% 9%;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; overflow: hidden;
+  color: var(--tinta);
+  font: 700 16px/1.1 "MT Quadrinhos", "Comic Sans MS", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: .01em;
+  text-wrap: balance;
+  hyphens: auto; overflow-wrap: break-word;
+}
+.escuro .txt { color: #fff; }
+:host([data-fonte="sistema"]) .txt { font-family: "Segoe UI", system-ui, sans-serif; letter-spacing: 0; line-height: 1.15; }
+:host([data-maiusculas]) .txt { text-transform: uppercase; }
 
-.mt-capa {
-  position: fixed; inset: 0; z-index: 2147483647; cursor: crosshair;
-  background: #0b0c1299; user-select: none;
-}
-.mt-capa.mt-arrastando { background: transparent; }
-.mt-caixa {
-  position: fixed; display: none; border-radius: 6px;
-  border: 2px solid #a855f7; background: #a855f70f;
-  box-shadow: 0 0 0 100vmax #0b0c1299;
-}
-.mt-medida {
-  position: absolute; right: -2px; bottom: -28px; padding: 2px 8px; border-radius: 6px;
-  background: #6366f1; color: #fff; font: 600 11px "Segoe UI", system-ui, sans-serif; white-space: nowrap;
-}
-.mt-dica {
-  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
-  padding: 10px 18px; border-radius: 999px; background: #181b25f2; color: #eceef6;
-  border: 1px solid #ffffff1a; font: 600 14px "Segoe UI", system-ui, sans-serif; pointer-events: none;
-}
-.mt-dica kbd {
-  padding: 1px 6px; border-radius: 5px; border: 1px solid #ffffff33; font: inherit; font-size: 12px;
+/* texto por cima de arte (sem balão liso): caixa própria, com contorno no texto */
+.sobre-arte { border-radius: 10px; background: color-mix(in srgb, var(--fundo) 90%, transparent); box-shadow: 0 1px 6px #0004; }
+.sobre-arte .cobre { display: none; }
+.sobre-arte .txt { text-shadow: 0 0 2px var(--fundo), 0 0 2px var(--fundo); }
+
+/* enquanto a tradução não chega: retícula (screentone) andando sobre o texto já coberto */
+.vazio .cobre {
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--hanko) 55%, transparent) 1.1px, transparent 1.6px);
+  background-size: 7px 7px;
+  animation: tom 1.2s linear infinite;
 }
 
-@keyframes mt-brilho { to { background-position: -200% 0; } }
-@keyframes mt-gira { to { transform: rotate(360deg); } }
-@keyframes mt-entra { from { opacity: 0; transform: translate(-50%, -8px); } }
-@keyframes mt-surge { from { opacity: 0; transform: scale(.92); } }
+/* clique: mostra o original */
+.original { outline: 2px dashed color-mix(in srgb, var(--hanko) 70%, transparent); outline-offset: -2px; border-radius: 10px; background: none; box-shadow: none; }
+.original .cobre, .original .txt { visibility: hidden; }
+.balao:not(.original):hover { filter: drop-shadow(0 0 1.5px var(--hanko)); }
+
+/* ---------- aviso (um balãozinho de fala) ---------- */
+.aviso {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px 9px 12px;
+  background: var(--papel); color: var(--tinta);
+  border: 2px solid var(--tinta); border-radius: 16px;
+  box-shadow: 4px 4px 0 var(--tinta);
+  font: 700 13.5px/1.25 "Segoe UI", system-ui, sans-serif;
+  max-width: min(560px, calc(100vw - 40px));
+  pointer-events: auto;
+  animation: entra .18s ease-out;
+}
+.aviso::after {
+  content: ""; position: absolute; left: 26px; bottom: -8px;
+  width: 12px; height: 12px; background: var(--papel);
+  border-right: 2px solid var(--tinta); border-bottom: 2px solid var(--tinta);
+  transform: skewX(-25deg) rotate(45deg);
+}
+.aviso.erro { border-color: var(--hanko); box-shadow: 4px 4px 0 var(--hanko); }
+.aviso.erro::after { border-color: var(--hanko); }
+.aviso.erro::before {
+  content: "!"; display: grid; place-items: center; flex: none;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--hanko); color: #fff; font-weight: 900;
+}
+.roda {
+  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  background: conic-gradient(var(--hanko) 0 25%, var(--tinta) 0 50%, var(--hanko) 0 75%, var(--tinta) 0);
+  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  animation: gira .9s steps(8) infinite;
+}
+
+/* ---------- recorte ---------- */
+.capa {
+  position: fixed; inset: 0; pointer-events: auto; cursor: crosshair; user-select: none;
+  background-color: rgb(22 19 15 / .42);
+  background-image: radial-gradient(rgb(22 19 15 / .35) 1px, transparent 1.6px);
+  background-size: 5px 5px;
+}
+.capa.arrastando { background: none; }
+.capa.arrastando .dica { display: none; }
+.selecao {
+  position: fixed; display: none;
+  border: 2.5px solid var(--hanko); border-radius: 4px;
+  box-shadow: 0 0 0 100vmax rgb(22 19 15 / .5);
+}
+.medida {
+  position: absolute; right: -3px; bottom: -30px;
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--hanko); color: #fff; border: 2px solid var(--tinta);
+  font: 800 11px "Segoe UI", system-ui, sans-serif; white-space: nowrap;
+}
+.dica {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  padding: 9px 16px; border-radius: 16px;
+  background: var(--papel); color: var(--tinta);
+  border: 2px solid var(--tinta); box-shadow: 4px 4px 0 var(--tinta);
+  font: 600 13.5px "Segoe UI", system-ui, sans-serif; white-space: nowrap;
+}
+.dica b { color: var(--hanko); text-transform: uppercase; letter-spacing: .04em; margin-right: 4px; }
+.dica kbd { padding: 1px 6px; border: 1.5px solid var(--tinta); border-radius: 5px; font: 700 11px inherit; }
+
+@keyframes surge { from { opacity: 0; } }
+@keyframes tom { to { background-position: 7px 7px; } }
+@keyframes gira { to { transform: rotate(360deg); } }
+@keyframes entra { from { opacity: 0; transform: translate(-50%, -6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .mt-aviso, .mt-balao, .mt-vazio::after { animation: none; }
+  .balao, .aviso, .roda, .vazio .cobre { animation: none; }
 }

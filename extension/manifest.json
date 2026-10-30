@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manga Tradutor",
-  "version": "1.2",
-  "description": "Traduz os balões do mangá aberto na aba para português, usando a API da DeepSeek.",
+  "version": "2.0",
+  "description": "Traduz balões de mangá, manhwa e manhua direto na página, com a IA que você escolher (DeepSeek, Gemini, OpenAI, Claude, OpenRouter ou Ollama).",
   "permissions": [
     "scripting",
     "storage"
@@ -39,9 +39,20 @@
         "content.js"
       ],
       "css": [
-        "pagina.css"
+        "fontes.css"
       ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "pagina.css",
+        "fontes/*.woff"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

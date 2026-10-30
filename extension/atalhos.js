@@ -1,6 +1,7 @@
 // Usado pela página (content script), pelo popup e pelas configurações.
-const ATALHOS_PADRAO = { pagina: ["Alt", "T"], recortar: ["Alt", "R"] };
+const ATALHOS_PADRAO = { pagina: ["T"], recortar: ["R"], alternar: ["O"] };
 const MODIFICADORES = ["Ctrl", "Alt", "Shift", "Meta"];
+const BOTOES_MOUSE = { 1: "Botão do meio", 3: "Mouse voltar", 4: "Mouse avançar" };
 
 /** Nome estável da tecla, independente do layout (Shift+1 continua "1"). */
 function nomeTecla(e) {

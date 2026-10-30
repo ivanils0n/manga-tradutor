@@ -1,48 +1,100 @@
+/* Identidade: papel, nanquim e carimbo vermelho (hanko), com retícula de mangá. */
+@font-face {
+  font-family: "MT Titulo";
+  src: url("fontes/bangers.woff") format("woff");
+  font-display: block;
+}
 :root {
-  --fundo: #0f1117;
-  --cartao: #181b25;
-  --borda: #2a2e3d;
-  --texto: #eceef6;
-  --suave: #9a9fb5;
-  --marca: linear-gradient(135deg, #6366f1, #a855f7);
-  --foco: #8b7cf6;
-  --ok: #4ade80;
-  --erro: #f87171;
+  --papel: #f4efe4;
+  --papel-claro: #fbf8f1;
+  --tinta: #16130f;
+  --tinta-suave: #5d554a;
+  --linha: #d8cfbd;
+  --hanko: #e2412e;
+  --hanko-escuro: #b8301f;
+  --ok: #2f7d4f;
+  --sombra: 4px 4px 0 var(--tinta);
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
-  background: var(--fundo);
-  color: var(--texto);
+  background: var(--papel);
+  color: var(--tinta);
 }
-.topo { display: flex; align-items: center; gap: 10px; }
-.topo img { width: 32px; height: 32px; border-radius: 8px; }
-.topo h1 { font-size: 16px; margin: 0; font-weight: 700; }
-.topo small { display: block; color: var(--suave); font-size: 12px; font-weight: 400; }
+.reticula {
+  background-image: radial-gradient(rgb(22 19 15 / .13) 1.1px, transparent 1.5px);
+  background-size: 7px 7px;
+}
+.titulo {
+  font-family: "MT Titulo", Impact, sans-serif;
+  font-weight: 400; letter-spacing: .04em; line-height: 1;
+  margin: 0;
+}
+a { color: var(--hanko-escuro); font-weight: 600; }
+a:hover { color: var(--hanko); }
+:focus-visible { outline: 3px solid var(--hanko); outline-offset: 2px; }
 
+/* quadro de mangá */
+.quadro {
+  background: var(--papel-claro);
+  border: 2.5px solid var(--tinta);
+  border-radius: 6px;
+  box-shadow: var(--sombra);
+}
+
+/* botão de tinta */
 .botao {
   display: flex; align-items: center; gap: 12px; width: 100%;
-  padding: 12px 14px; border: 1px solid var(--borda); border-radius: 12px;
-  background: var(--cartao); color: inherit; font: inherit; text-align: left; cursor: pointer;
-  transition: border-color .15s, transform .1s;
+  padding: 11px 13px;
+  background: var(--papel-claro); color: var(--tinta);
+  border: 2px solid var(--tinta); border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--tinta);
+  font: inherit; text-align: left; cursor: pointer;
+  transition: transform .08s, box-shadow .08s;
 }
-.botao:hover { border-color: var(--foco); }
-.botao:active { transform: scale(.98); }
-.botao:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
-.botao .ico {
-  flex: none; display: grid; place-items: center; width: 34px; height: 34px;
-  border-radius: 9px; background: var(--marca); color: #fff;
-}
-.botao b { display: block; font-weight: 600; }
-.botao span.dica { color: var(--suave); font-size: 12px; }
-kbd {
-  margin-left: auto; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--borda);
-  background: var(--fundo); color: var(--suave); font: 600 11px "Segoe UI", system-ui, sans-serif; white-space: nowrap;
-}
+.botao:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--tinta); }
+.botao:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--tinta); }
 .primario {
-  border: 0; border-radius: 10px; padding: 11px 20px; background: var(--marca);
-  color: #fff; font: 600 14px "Segoe UI", system-ui, sans-serif; cursor: pointer;
+  padding: 10px 20px;
+  background: var(--hanko); color: #fff;
+  border: 2px solid var(--tinta); border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--tinta);
+  font: 800 14px "Segoe UI", system-ui, sans-serif; letter-spacing: .02em; cursor: pointer;
+  transition: transform .08s, box-shadow .08s;
 }
-.primario:hover { filter: brightness(1.1); }
-a { color: var(--foco); }
+.primario:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--tinta); }
+.primario:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--tinta); }
+.secundario {
+  padding: 9px 14px;
+  background: transparent; color: var(--tinta);
+  border: 2px solid var(--tinta); border-radius: 8px;
+  font: 700 13px "Segoe UI", system-ui, sans-serif; cursor: pointer;
+}
+.secundario:hover { background: var(--tinta); color: var(--papel-claro); }
+
+kbd {
+  display: inline-block; min-width: 26px; padding: 2px 7px;
+  background: var(--papel-claro); color: var(--tinta);
+  border: 1.5px solid var(--tinta); border-bottom-width: 3px; border-radius: 6px;
+  font: 800 12px "Segoe UI", system-ui, sans-serif; text-align: center; white-space: nowrap;
+}
+
+/* interruptor */
+.chave-liga { position: relative; flex: none; width: 44px; height: 24px; }
+.chave-liga input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.chave-liga span {
+  position: absolute; inset: 0; border: 2px solid var(--tinta); border-radius: 99px;
+  background: var(--papel-claro); pointer-events: none; transition: background .15s;
+}
+.chave-liga span::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--tinta); transition: transform .15s;
+}
+.chave-liga input:checked + span { background: var(--hanko); }
+.chave-liga input:checked + span::after { transform: translateX(20px); background: #fff; }
+.chave-liga input:focus-visible + span { outline: 3px solid var(--hanko); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

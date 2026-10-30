@@ -5,93 +5,194 @@
 <link rel="icon" href="icones/32.png">
 <link rel="stylesheet" href="estilo.css">
 <style>
-  main { max-width: 480px; margin: 48px auto; padding: 0 16px 48px; }
-  .cartao { margin-top: 20px; padding: 20px; border-radius: 16px; background: var(--cartao); border: 1px solid var(--borda); }
-  .cartao h2 { margin: 0 0 4px; font-size: 15px; }
-  .cartao > p { margin: 0 0 16px; color: var(--suave); font-size: 12px; }
-  label { display: block; margin: 0 0 6px; font-weight: 600; }
-  label + .ajuda { margin: -2px 0 8px; color: var(--suave); font-size: 12px; }
-  .campo { margin-bottom: 18px; }
-  .campo:last-child { margin-bottom: 0; }
-  .linha { display: flex; gap: 8px; }
-  input {
-    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--borda);
-    background: var(--fundo); color: inherit; font: inherit;
-  }
-  input:focus { border-color: var(--foco); outline: none; }
-  .olho, .limpar {
-    flex: none; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo);
-    color: var(--suave); cursor: pointer; font: inherit;
-  }
-  .olho { width: 44px; }
-  .limpar { padding: 0 14px; }
-  .limpar:hover, .olho:hover { color: var(--texto); border-color: var(--foco); }
-  .acoes { display: flex; align-items: center; gap: 12px; }
-  .ok { color: var(--ok); font-weight: 600; opacity: 0; transition: opacity .2s; }
+  @font-face { font-family: "MT Quadrinhos"; src: url("fontes/comic-neue-bold.woff") format("woff"); font-weight: 100 900; }
+  body { padding: 0 16px 64px; }
+  main { max-width: 680px; margin: 0 auto; }
 
-  .gravador {
-    flex: 1; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 12px;
-    border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); color: var(--suave);
-    font: inherit; text-align: left; cursor: pointer;
+  .capa-topo { display: flex; align-items: center; gap: 16px; padding: 36px 0 26px; }
+  .capa-topo img { width: 64px; height: 64px; }
+  .capa-topo .titulo { font-size: 44px; }
+  .capa-topo .carimbo {
+    display: inline-block; margin-top: 6px; padding: 2px 10px;
+    border: 2px solid var(--hanko); border-radius: 4px; color: var(--hanko);
+    font: 800 12px "Segoe UI", system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase;
+    transform: rotate(-2deg);
   }
-  .gravador:hover { border-color: var(--foco); }
-  .gravador kbd { margin: 0; color: var(--texto); font-size: 12px; padding: 3px 8px; }
-  .gravador .mais { color: var(--suave); }
-  .gravador.gravando { border-color: var(--foco); color: var(--texto); box-shadow: 0 0 0 3px #8b7cf633; }
+  #salvo { margin-left: auto; align-self: flex-start; margin-top: 44px; font-weight: 700; color: var(--ok); opacity: 0; transition: opacity .2s; }
+
+  section.quadro { padding: 22px 22px 24px; margin-bottom: 26px; }
+  section > h2 { display: flex; align-items: baseline; gap: 10px; font-size: 28px; margin-bottom: 4px; }
+  section > h2 span { color: var(--hanko); }
+  section > p.sub { margin: 0 0 18px; color: var(--tinta-suave); font-size: 13px; }
+
+  .campo { margin-bottom: 16px; }
+  .campo:last-child { margin-bottom: 0; }
+  .campo > label, .rotulo { display: block; margin-bottom: 6px; font-weight: 700; }
+  .ajuda { margin: 4px 0 0; color: var(--tinta-suave); font-size: 12.5px; }
+  input[type=text], input[type=password], input[type=url], select, textarea {
+    width: 100%; padding: 10px 12px;
+    background: #fff; color: var(--tinta);
+    border: 2px solid var(--tinta); border-radius: 8px;
+    font: 14px "Segoe UI", system-ui, sans-serif;
+  }
+  textarea { min-height: 92px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  input:focus, select:focus, textarea:focus { outline: none; box-shadow: 3px 3px 0 var(--hanko); }
+  .linha { display: flex; gap: 8px; }
+  .linha > :first-child { flex: 1; }
+
+  .provedores { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .provedores label {
+    position: relative; display: block; padding: 10px 12px 10px 36px; cursor: pointer;
+    background: #fff; border: 2px solid var(--tinta); border-radius: 8px;
+    font-weight: 700; font-size: 13.5px;
+  }
+  .provedores input { position: absolute; left: 12px; top: 12px; accent-color: var(--hanko); width: 16px; height: 16px; margin: 0; }
+  .provedores label:has(input:checked) { background: var(--hanko); color: #fff; box-shadow: 3px 3px 0 var(--tinta); }
+  .provedores small { display: block; font-weight: 500; font-size: 11.5px; opacity: .75; }
+
+  .teste { margin-top: 14px; padding: 12px 14px; border: 2px dashed var(--tinta-suave); border-radius: 8px; display: none; font-size: 13px; }
+  .teste.ok { display: block; border-color: var(--ok); }
+  .teste.erro { display: block; border-color: var(--hanko); color: var(--hanko-escuro); }
+  .teste b { display: block; margin-bottom: 4px; }
+
+  .opcao { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1.5px dashed var(--linha); }
+  .opcao:last-of-type { border-bottom: 0; }
+  .opcao span:first-child { flex: 1; }
+  .opcao b { display: block; }
+  .opcao small { color: var(--tinta-suave); font-size: 12.5px; }
+
+  .fontes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fontes label {
+    display: grid; place-items: center; gap: 4px; min-height: 86px; padding: 10px; cursor: pointer; text-align: center;
+    background: #fff; border: 2px solid var(--tinta); border-radius: 46% / 40%; /* formato de balão */
+  }
+  .fontes input { position: absolute; opacity: 0; }
+  .fontes .amostra { font-size: 17px; font-weight: 700; line-height: 1.1; }
+  .fontes small { font-size: 11.5px; color: var(--tinta-suave); }
+  .fontes label:has(input:checked) { box-shadow: 4px 4px 0 var(--hanko); border-color: var(--hanko); }
+  .fontes label:has(input:focus-visible) { outline: 3px solid var(--hanko); outline-offset: 2px; }
+
+  .atalho { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; margin-bottom: 14px; }
+  .atalho .rotulo { grid-column: 1 / -1; margin: 0; }
+  .gravador {
+    display: flex; align-items: center; gap: 6px; min-height: 46px; padding: 8px 12px;
+    background: #fff; color: var(--tinta-suave); border: 2px solid var(--tinta); border-radius: 8px;
+    font: 14px "Segoe UI", system-ui, sans-serif; text-align: left; cursor: pointer;
+  }
+  .gravador .mais { font-weight: 800; color: var(--tinta-suave); }
+  .gravador.gravando { color: var(--tinta); box-shadow: 3px 3px 0 var(--hanko); border-color: var(--hanko); }
   .gravador.gravando::before {
-    content: ""; width: 8px; height: 8px; border-radius: 50%; background: #f87171;
+    content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--hanko); flex: none;
     animation: pisca 1s ease-in-out infinite;
   }
-  .aviso-atalho { min-height: 18px; margin-top: 6px; font-size: 12px; color: var(--erro); }
-  @keyframes pisca { 50% { opacity: .3; } }
+  .aviso-atalho { grid-column: 1 / -1; min-height: 0; font-size: 12.5px; color: var(--hanko-escuro); font-weight: 600; }
+  @keyframes pisca { 50% { opacity: .25; } }
+
+  details summary { cursor: pointer; font-weight: 700; }
+  pre { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; margin: 10px 0 0; padding: 10px; background: #fff; border: 2px solid var(--tinta); border-radius: 8px; font-size: 12px; }
 </style>
+
 <main>
-  <div class="topo">
-    <img src="icones/48.png" alt="">
-    <h1>Manga Tradutor<small>Configurações</small></h1>
+  <div class="capa-topo">
+    <img src="icones/128.png" alt="">
+    <div>
+      <h1 class="titulo">Manga Tradutor</h1>
+      <span class="carimbo">Configurações</span>
+    </div>
+    <span id="salvo" role="status">Salvo ✓</span>
   </div>
 
-  <section class="cartao">
-    <div class="campo">
-      <label for="chave">Chave da API DeepSeek</label>
-      <p class="ajuda">Fica salva só neste navegador.</p>
-      <div class="linha">
-        <input id="chave" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
-        <button class="olho" id="olho" type="button" aria-label="Mostrar chave">👁</button>
-      </div>
+  <section class="quadro">
+    <h2 class="titulo"><span>01</span> Inteligência artificial</h2>
+    <p class="sub">Escolha quem lê e traduz a página. Precisa ser um modelo que entende imagens.</p>
+    <div class="provedores" id="provedores" role="radiogroup" aria-label="Provedor"></div>
+    <div class="campo" id="campo-chave">
+      <label for="chave">Chave da API</label>
+      <input id="chave" type="password" autocomplete="off" spellcheck="false" placeholder="Cole a chave aqui">
+      <p class="ajuda" id="ajuda-chave"></p>
     </div>
     <div class="campo">
       <label for="modelo">Modelo</label>
-      <input id="modelo" placeholder="deepseek-flash" spellcheck="false">
+      <input id="modelo" type="text" list="sugestoes" spellcheck="false">
+      <datalist id="sugestoes"></datalist>
     </div>
-    <div class="acoes">
-      <button class="primario" id="salvar">Salvar</button>
-      <span class="ok" id="ok" role="status">Salvo ✓</span>
+    <div class="campo" id="campo-url">
+      <label for="url">Endereço da API</label>
+      <input id="url" type="url" spellcheck="false">
+      <p class="ajuda" id="ajuda-url"></p>
+    </div>
+    <button class="secundario" id="testar">Testar conexão</button>
+    <div class="teste" id="teste" role="status"></div>
+  </section>
+
+  <section class="quadro">
+    <h2 class="titulo"><span>02</span> Tradução</h2>
+    <p class="sub">Vale para as próximas traduções.</p>
+    <div class="campo">
+      <label for="idioma">Traduzir para</label>
+      <select id="idioma"></select>
+    </div>
+    <label class="opcao">
+      <span><b>Manter honoríficos</b><small>-san, -kun, -chan, senpai…</small></span>
+      <span class="chave-liga"><input type="checkbox" id="honorificos"><span></span></span>
+    </label>
+    <label class="opcao">
+      <span><b>Traduzir onomatopeias</b><small>Gasta um pouco mais e cobre efeitos sonoros desenhados</small></span>
+      <span class="chave-liga"><input type="checkbox" id="onomatopeias"><span></span></span>
+    </label>
+    <label class="opcao">
+      <span><b>Letras maiúsculas</b><small>Como nos letreiros de mangá impresso</small></span>
+      <span class="chave-liga"><input type="checkbox" id="maiusculas"><span></span></span>
+    </label>
+    <div class="campo" style="margin-top:14px">
+      <span class="rotulo">Letra dos balões</span>
+      <div class="fontes">
+        <label><input type="radio" name="fonte" value="quadrinhos"><span class="amostra" style="font-family:'MT Quadrinhos'">Ei! Espera aí!</span><small>Quadrinhos</small></label>
+        <label><input type="radio" name="fonte" value="sistema"><span class="amostra" style="font-family:'Segoe UI',system-ui">Ei! Espera aí!</span><small>Simples</small></label>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="glossario">Glossário</label>
+      <textarea id="glossario" spellcheck="false" placeholder="Um por linha, original = tradução&#10;Gomu Gomu no Mi = Fruta da Borracha&#10;Kaizoku = Pirata"></textarea>
+      <p class="ajuda">Nomes, golpes e termos que devem sair sempre do mesmo jeito.</p>
     </div>
   </section>
 
-  <section class="cartao">
-    <h2>Atalhos</h2>
-    <p>Clique no campo e aperte a tecla ou a combinação que quiser (uma ou mais teclas juntas). Salva sozinho.</p>
-    <div class="campo">
-      <label id="r-pagina">Traduzir página inteira</label>
-      <div class="linha">
-        <button class="gravador" data-acao="pagina" aria-labelledby="r-pagina"></button>
-        <button class="limpar" data-acao="pagina">Limpar</button>
-      </div>
+  <section class="quadro">
+    <h2 class="titulo"><span>03</span> Atalhos</h2>
+    <p class="sub">Clique no campo e aperte a tecla. Uma tecla basta; para combinação, segure as teclas juntas. Vale também o botão do meio e os botões laterais do mouse.</p>
+    <div class="atalho">
+      <span class="rotulo" id="r-pagina">Traduzir a tela</span>
+      <button class="gravador" data-acao="pagina" aria-labelledby="r-pagina"></button>
+      <button class="secundario" data-limpar="pagina">Limpar</button>
       <div class="aviso-atalho" data-aviso="pagina" role="status"></div>
     </div>
-    <div class="campo">
-      <label id="r-recortar">Recortar uma parte</label>
-      <div class="linha">
-        <button class="gravador" data-acao="recortar" aria-labelledby="r-recortar"></button>
-        <button class="limpar" data-acao="recortar">Limpar</button>
-      </div>
+    <div class="atalho">
+      <span class="rotulo" id="r-recortar">Recortar uma parte</span>
+      <button class="gravador" data-acao="recortar" aria-labelledby="r-recortar"></button>
+      <button class="secundario" data-limpar="recortar">Limpar</button>
       <div class="aviso-atalho" data-aviso="recortar" role="status"></div>
     </div>
-    <p style="margin:4px 0 0">Clique num balão traduzido ou aperte <kbd>Esc</kbd> para fechar a tradução.</p>
+    <div class="atalho">
+      <span class="rotulo" id="r-alternar">Mostrar/ocultar traduções</span>
+      <button class="gravador" data-acao="alternar" aria-labelledby="r-alternar"></button>
+      <button class="secundario" data-limpar="alternar">Limpar</button>
+      <div class="aviso-atalho" data-aviso="alternar" role="status"></div>
+    </div>
+    <p class="ajuda">Na página: clique num balão para ver o original; <kbd>Esc</kbd> apaga as traduções.</p>
+  </section>
+
+  <section class="quadro">
+    <h2 class="titulo"><span>04</span> Diagnóstico</h2>
+    <p class="sub">Para quando algo não sai como esperado.</p>
+    <details>
+      <summary>Última resposta da IA</summary>
+      <pre id="ultima">Nada ainda nesta sessão do navegador.</pre>
+    </details>
+    <p style="margin:14px 0 0"><button class="secundario" id="limparCache">Limpar traduções guardadas</button>
+      <span class="ajuda" id="cacheOk" style="margin-left:8px"></span></p>
   </section>
 </main>
 <script src="atalhos.js"></script>
-<script src="opcoes.js"></script>
+<script type="module" src="opcoes.js"></script>
 </html>
