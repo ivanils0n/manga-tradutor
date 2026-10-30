@@ -20,4 +20,4 @@ Cada push na `main` gera de novo só a parte que mudou.
 1. Baixe e extraia o `.zip` numa pasta fixa.
 2. Abra `chrome://extensions` (ou `edge://extensions`), ligue **Modo do desenvolvedor** e clique em **Carregar sem compactação**, escolhendo a pasta.
 3. Na primeira vez que clicar no ícone, abre a tela para colar a chave da DeepSeek.
-4. Na página do mangá, clique no ícone ou aperte **Alt+T**. Clique num balão (ou **Esc**) para fechar.
+4. Na página do mangá, aperte **Alt+T** para traduzir tudo o que está visível, ou **Alt+R** para recortar só uma parte (também dá pelo ícone da extensão). Clique num balão (ou **Esc**) para fechar. Os atalhos podem ser trocados em `chrome://extensions/shortcuts`.

@@ -1,14 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Manga Tradutor",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Traduz os balões do mangá aberto na aba para português, usando a API da DeepSeek.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://api.deepseek.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_title": "Traduzir página (Alt+T)" },
+  "icons": { "16": "icones/16.png", "32": "icones/32.png", "48": "icones/48.png", "128": "icones/128.png" },
+  "action": {
+    "default_title": "Manga Tradutor",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icones/16.png", "32": "icones/32.png" }
+  },
   "options_page": "opcoes.html",
   "commands": {
-    "_execute_action": { "suggested_key": { "default": "Alt+T" }, "description": "Traduzir página" }
+    "pagina": { "suggested_key": { "default": "Alt+T" }, "description": "Traduzir a página inteira" },
+    "recortar": { "suggested_key": { "default": "Alt+R" }, "description": "Recortar uma parte e traduzir" }
   }
 }

@@ -1,20 +1,58 @@
 <!doctype html>
 <html lang="pt-BR">
 <meta charset="utf-8">
-<title>Manga Tradutor</title>
+<title>Manga Tradutor · Configurações</title>
+<link rel="icon" href="icones/32.png">
+<link rel="stylesheet" href="estilo.css">
 <style>
-  body { font: 14px system-ui, sans-serif; background: #12141c; color: #ededf3; max-width: 420px; margin: 40px auto; padding: 0 16px; }
-  label { display: block; margin: 14px 0 6px; color: #a9acbd; }
-  input { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #333849; background: #1e2130; color: inherit; }
-  button { margin-top: 18px; padding: 10px 20px; border: 0; border-radius: 8px; background: #6c7bff; color: #fff; font-weight: 600; cursor: pointer; }
-  #ok { margin-left: 10px; color: #7ddc9a; }
+  main { max-width: 460px; margin: 48px auto; padding: 0 16px; }
+  .cartao { margin-top: 24px; padding: 20px; border-radius: 16px; background: var(--cartao); border: 1px solid var(--borda); }
+  label { display: block; margin: 0 0 6px; font-weight: 600; }
+  label + .ajuda { margin: -2px 0 8px; color: var(--suave); font-size: 12px; }
+  .campo { margin-bottom: 18px; }
+  .linha { display: flex; gap: 8px; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--borda);
+    background: var(--fundo); color: inherit; font: inherit;
+  }
+  input:focus { border-color: var(--foco); outline: none; }
+  .olho { flex: none; width: 44px; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); color: var(--suave); cursor: pointer; }
+  .acoes { display: flex; align-items: center; gap: 12px; }
+  #ok { color: var(--ok); font-weight: 600; opacity: 0; transition: opacity .2s; }
+  .uso { margin-top: 20px; display: grid; gap: 8px; color: var(--suave); }
+  .uso div { display: flex; align-items: center; gap: 10px; }
+  .uso kbd { margin-left: 0; }
 </style>
-<h2>Manga Tradutor</h2>
-<label for="chave">Chave da API DeepSeek</label>
-<input id="chave" type="password" autocomplete="off">
-<label for="modelo">Modelo</label>
-<input id="modelo" placeholder="deepseek-flash">
-<button id="salvar">Salvar</button><span id="ok"></span>
-<p style="color:#a9acbd">Na página do mangá, clique no ícone da extensão ou aperte <b>Alt+T</b>. Clique num balão (ou Esc) para fechar.</p>
+<main>
+  <div class="topo">
+    <img src="icones/48.png" alt="">
+    <h1>Manga Tradutor<small>Configurações</small></h1>
+  </div>
+
+  <div class="cartao">
+    <div class="campo">
+      <label for="chave">Chave da API DeepSeek</label>
+      <p class="ajuda">Fica salva só neste navegador.</p>
+      <div class="linha">
+        <input id="chave" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…">
+        <button class="olho" id="olho" type="button" aria-label="Mostrar chave">👁</button>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="modelo">Modelo</label>
+      <input id="modelo" placeholder="deepseek-flash" spellcheck="false">
+    </div>
+    <div class="acoes">
+      <button class="primario" id="salvar">Salvar</button>
+      <span id="ok" role="status">Salvo ✓</span>
+    </div>
+  </div>
+
+  <div class="uso">
+    <div><kbd>Alt+T</kbd> traduz tudo que está visível na aba</div>
+    <div><kbd>Alt+R</kbd> deixa você recortar só uma parte</div>
+    <div>Clique num balão ou aperte <kbd>Esc</kbd> para fechar a tradução.</div>
+  </div>
+</main>
 <script src="opcoes.js"></script>
 </html>

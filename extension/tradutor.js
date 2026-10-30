@@ -48,3 +48,10 @@ export function interpretar(resposta) {
     return [{ l: Math.min(x1, x2), t: Math.min(y1, y2), r: Math.max(x1, x2), b: Math.max(y1, y2), texto }];
   });
 }
+
+/** Converte balões normalizados no recorte r ({x,y,w,h} em 0..1 da tela) para normalizados na tela. */
+export function paraTela(baloes, r) {
+  return baloes.map((b) => ({
+    l: r.x + b.l * r.w, t: r.y + b.t * r.h, r: r.x + b.r * r.w, b: r.y + b.b * r.h, texto: b.texto,
+  }));
+}
