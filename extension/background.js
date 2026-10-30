@@ -1,17 +1,24 @@
 import { lerConfig, faltaConfig } from "./config.js";
 import { chamar } from "./provedores.js";
 import {
-  montarPrompt, interpretar, parciais, paraTela, pedacos, amostrar, analisarBalao, mesclar, textoContexto,
+  montarPrompt, montarPromptTexto, itensTexto, interpretar, interpretarTexto, parciais, parciaisTexto, pedacos, amostrar,
+  analisarBalao, mesclar, textoContexto, nomesDe, juntarGlossario, obraDoTitulo, preencherBordas, linhasDoTsv,
+  agruparLinhas, ocrConfiavel,
 } from "./tradutor.js";
 
 // ---------- mensagens avulsas (popup e configurações) ----------
 chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
+  if (msg.alvo) return; // é para o documento do OCR
   if (msg.tipo === "testar") {
     testar().then(responder, (e) => responder({ erro: e.message }));
     return true;
   }
   if (msg.tipo === "limparCache") {
     cache("limpar").then(() => responder(true));
+    return true;
+  }
+  if (msg.tipo === "infoCache") {
+    cache("contar").then((n) => responder(n ?? 0));
     return true;
   }
   if (msg.acao) chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab && dispararNaAba(tab.id, msg.acao));
@@ -34,12 +41,16 @@ async function dispararNaAba(tabId, acao) {
 chrome.runtime.onConnect.addListener((porta) => {
   if (porta.name !== "mt") return;
   const est = {
-    porta, controle: new AbortController(), contexto: [], emAndamento: new Map(),
+    porta, controle: new AbortController(), contexto: [], emAndamento: new Map(), lote: null,
     tabId: porta.sender?.tab?.id, pagina: porta.sender?.url,
   };
   porta.onDisconnect.addListener(() => est.controle.abort());
   porta.onMessage.addListener((m) => {
-    if (m.tipo === "prioridade") return filaApi.repriorizar(est, m.url, m.prioridade);
+    if (m.tipo === "prioridade") {
+      filaApi.repriorizar(est, m.url, m.prioridade);
+      filaLocal.repriorizar(est, m.url, m.prioridade);
+      return;
+    }
     const tarefa = m.tipo === "imagem" ? traduzirImagem(est, m) : m.tipo === "print" ? traduzirPrint(est, m) : null;
     tarefa?.catch((e) => {
       if (e.name !== "AbortError") enviar(est, { rid: m.rid, tipo: "erro", msg: e.message, semImagem: !!e.semImagem });
@@ -61,33 +72,40 @@ async function configPronta(manual) {
   return cfg;
 }
 
-// ---------- fila das chamadas à IA: no máximo 4 ao mesmo tempo, o que está na tela primeiro ----------
-const filaApi = (() => {
+const obraDe = (est, m) => {
+  try { return obraDoTitulo(m.titulo, new URL(est.pagina).hostname); } catch { return ""; }
+};
+
+// ---------- filas: o que está na tela primeiro ----------
+function criarFila(limite) {
   let ativos = 0;
   const fila = [];
   const proximo = () => {
-    while (ativos < 4 && fila.length) {
+    while (ativos < limite && fila.length) {
       const t = fila.shift();
       ativos++;
       t.f().then(t.ok, t.falha).finally(() => { ativos--; proximo(); });
     }
   };
   const ordenar = () => fila.sort((a, b) => a.prioridade - b.prioridade);
-  // o Chrome desliga o service worker parado há 30 s; uma chamada de API a cada 20 s o mantém vivo
-  // enquanto uma resposta lenta (modelos que "pensam") ainda está chegando
-  setInterval(() => { if (ativos) chrome.runtime.getPlatformInfo(); }, 20000);
-  const filaApi = (prioridade, f, dono = {}) => new Promise((ok, falha) => {
-    fila.push({ prioridade, f, ok, falha, ...dono });
+  const f = (prioridade, tarefa, dono = {}) => new Promise((ok, falha) => {
+    fila.push({ prioridade, f: tarefa, ok, falha, ...dono });
     ordenar();
     proximo();
   });
   /** A página rolou: o que entrou na tela passa na frente do que ficou para trás. */
-  filaApi.repriorizar = (est, url, prioridade) => {
+  f.repriorizar = (est, url, prioridade) => {
     for (const t of fila) if (t.est === est && t.url === url) t.prioridade = prioridade;
     ordenar();
   };
-  return filaApi;
-})();
+  f.ativos = () => ativos;
+  return f;
+}
+const filaApi = criarFila(4); // chamadas à IA
+const filaLocal = criarFila(2); // baixar, recortar e ler (OCR) no PC: limita memória e processador
+// o Chrome desliga o service worker parado há 30 s; uma chamada de API a cada 20 s o mantém vivo
+// enquanto uma resposta lenta (modelos que "pensam") ainda está chegando
+setInterval(() => { if (filaApi.ativos() || filaLocal.ativos()) chrome.runtime.getPlatformInfo(); }, 20000);
 
 const abortado = () => new DOMException("cancelado", "AbortError");
 
@@ -101,35 +119,247 @@ function agendador(f, ms = 60) {
 
 // ---------- cache das traduções (IndexedDB: grande, sobrevive ao fechar o navegador) ----------
 // A chave não inclui a IA: trocar de API continua mostrando o que já foi traduzido, sem gastar de novo.
-// shortcut: nada é apagado sozinho; se um dia pesar, guardar a data e podar os mais antigos.
-let banco = null;
+// Guarda no máximo LIMITE_CACHE pedaços; passando disso, apaga os usados há mais tempo.
+const LIMITE_CACHE = 20000;
+let banco = null, gravacoes = 0;
 function abrirBanco() {
   return (banco ??= new Promise((ok, falha) => {
-    const r = indexedDB.open("manga-tradutor", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("traducoes");
+    const r = indexedDB.open("manga-tradutor", 2);
+    r.onupgradeneeded = () => {
+      const db = r.result, tx = r.transaction;
+      const loja = db.objectStoreNames.contains("cache") ? tx.objectStore("cache") : db.createObjectStore("cache");
+      if (!loja.indexNames.contains("t")) loja.createIndex("t", "t");
+      if (db.objectStoreNames.contains("traducoes")) { // versão 1: traz as traduções que já existiam
+        tx.objectStore("traducoes").openCursor().onsuccess = (e) => {
+          const c = e.target.result;
+          if (!c) return db.deleteObjectStore("traducoes");
+          loja.put({ v: c.value, t: Date.now() }, c.key);
+          c.continue();
+        };
+      }
+    };
     r.onsuccess = () => ok(r.result);
     r.onerror = () => { banco = null; falha(r.error); };
   }));
 }
+function pedirBanco(modo, f) {
+  return abrirBanco().then((db) => new Promise((ok) => {
+    const r = f(db.transaction("cache", modo).objectStore("cache"));
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => ok(undefined);
+  }));
+}
 async function cache(modo, chave, valor) {
   try {
-    const db = await abrirBanco();
-    return await new Promise((ok) => {
-      const loja = db.transaction("traducoes", modo === "ler" ? "readonly" : "readwrite").objectStore("traducoes");
-      const r = modo === "ler" ? loja.get(chave) : modo === "gravar" ? loja.put(valor, chave) : loja.clear();
-      r.onsuccess = () => ok(r.result);
-      r.onerror = () => ok(undefined);
-    });
+    if (modo === "ler") {
+      const reg = await pedirBanco("readonly", (l) => l.get(chave));
+      if (reg && Date.now() - reg.t > 864e5) pedirBanco("readwrite", (l) => l.put({ v: reg.v, t: Date.now() }, chave)); // usado de novo
+      return reg?.v;
+    }
+    if (modo === "gravar") {
+      await pedirBanco("readwrite", (l) => l.put({ v: valor, t: Date.now() }, chave));
+      if (++gravacoes % 200 === 1) podar();
+      return;
+    }
+    if (modo === "contar") return await pedirBanco("readonly", (l) => l.count());
+    return await pedirBanco("readwrite", (l) => l.clear());
   } catch {
     return undefined; // sem cache a tradução continua funcionando
   }
 }
+/** Passou do limite: apaga os mais antigos até sobrar 80%. */
+async function podar(limite = LIMITE_CACHE) {
+  const total = await pedirBanco("readonly", (l) => l.count());
+  if (!(total > limite)) return 0;
+  let sobra = total - Math.floor(limite * 0.8);
+  const db = await abrirBanco();
+  return new Promise((ok) => {
+    const tx = db.transaction("cache", "readwrite");
+    let apagados = 0;
+    tx.objectStore("cache").index("t").openCursor().onsuccess = (e) => {
+      const c = e.target.result;
+      if (!c || sobra-- <= 0) return;
+      c.delete();
+      apagados++;
+      c.continue();
+    };
+    tx.oncomplete = () => ok(apagados);
+    tx.onerror = () => ok(apagados);
+  });
+}
+globalThis.mtDiagnostico = { cache, podar }; // para os testes conferirem o limite do cache
 
-/** Guarda as últimas falas (contexto para os próximos pedaços) e a resposta crua (diagnóstico). */
-function lembrar(est, itens, resposta) {
-  for (const it of itens) if (it.texto) est.contexto.push(it.texto.slice(0, 90));
+// ---------- contador de uso (chamadas, tokens, economia do cache) ----------
+const usoNovo = () => ({ chamadas: 0, entrada: 0, saida: 0, cache: 0, ocr: 0, estimado: 0 });
+let usoMem = usoNovo();
+const gravarUso = agendador(async () => {
+  const d = usoMem;
+  usoMem = usoNovo();
+  const hoje = new Date().toLocaleDateString("sv"); // AAAA-MM-DD no fuso do PC
+  const { uso = {} } = await chrome.storage.local.get("uso");
+  if (uso.dia !== hoje) Object.assign(uso, { dia: hoje, hoje: usoNovo() });
+  uso.total ??= usoNovo();
+  for (const k of Object.keys(d)) { uso.hoje[k] = (uso.hoje[k] || 0) + d[k]; uso.total[k] = (uso.total[k] || 0) + d[k]; }
+  await chrome.storage.local.set({ uso });
+}, 1500);
+function contarUso(campo, n = 1) {
+  usoMem[campo] += n;
+  gravarUso();
+}
+
+// ---------- glossário automático: nomes da obra aprendidos nas traduções ----------
+let filaGlossario = Promise.resolve();
+async function comGlossario(cfg, obra) {
+  if (!cfg.aprender || !obra) return cfg;
+  const { glossarios = {} } = await chrome.storage.local.get("glossarios");
+  return { ...cfg, glossarioAuto: glossarios[obra]?.termos || [] };
+}
+function aprenderNomes(obra, novos) {
+  if (!obra || !novos.length) return;
+  filaGlossario = filaGlossario.then(async () => { // um de cada vez: duas respostas juntas não se atropelam
+    const { glossarios = {} } = await chrome.storage.local.get("glossarios");
+    glossarios[obra] = { t: Date.now(), termos: juntarGlossario(glossarios[obra]?.termos, novos) };
+    const obras = Object.entries(glossarios).sort((a, b) => b[1].t - a[1].t).slice(0, 100);
+    await chrome.storage.local.set({ glossarios: Object.fromEntries(obras) });
+  }).catch(() => {});
+}
+
+/** Depois de cada resposta: conta o uso, aprende nomes, guarda as falas como contexto e a resposta crua. */
+function registrar(est, cfg, obra, resposta, uso, textos) {
+  contarUso("chamadas");
+  contarUso("entrada", uso.entrada || 0);
+  contarUso("saida", uso.saida || 0);
+  if (uso.estimado) contarUso("estimado");
+  if (cfg.aprender) aprenderNomes(obra, nomesDe(resposta));
+  for (const t of textos) if (t) est.contexto.push(t.slice(0, 90));
   est.contexto.splice(0, Math.max(0, est.contexto.length - 8));
   chrome.storage.session.set({ ultimaResposta: resposta.slice(0, 4000) }).catch(() => {});
+}
+
+// ---------- ler um pedaço: IA com imagem, ou OCR no PC + IA só com texto (inglês) ----------
+
+/**
+ * r: { canvas, pixels, tw, th, ocr? } de um pedaço já recortado. Devolve as falas com a caixa em
+ * pixels do pedaço e a análise do balão: [{ id, px, texto, a }].
+ */
+async function lerPedaco(est, cfg, r, { prioridade, obra, dono, aoParcial }) {
+  const analises = new Map();
+  const entrada = (px, texto) => {
+    const id = `${Math.round(px.l)},${Math.round(px.t)},${Math.round(px.r)},${Math.round(px.b)}`;
+    let a = analises.get(id);
+    if (!a) analises.set(id, (a = analisarBalao(r.pixels, px)));
+    return { id, px: { l: px.l, t: px.t, r: px.r, b: px.b }, texto, a };
+  };
+
+  // modo inglês: o Tesseract já leu e a leitura foi boa; a IA só corrige e traduz (sem imagem, bem mais barato)
+  const lido = r.ocr; // { grupos, linhas } quando o modo inglês leu este pedaço
+  if (lido && ocrConfiavel(lido.grupos, lido.linhas)) {
+    contarUso("ocr");
+    if (!lido.grupos.length) return [];
+    const base = lido.grupos.map((g) => entrada(g, ""));
+    aoParcial(base); // os balões já ficam cobertos antes da IA responder
+    const traduzidos = await traduzirTextos(est, cfg, lido.grupos.map((g) => g.texto), prioridade, obra,
+      (parcial) => aoParcial(base.map((e, i) => ({ ...e, texto: parcial[i] ?? "" }))));
+    return base.map((e, i) => ({ ...e, texto: traduzidos[i] })).filter((e) => e.texto);
+  }
+
+  const coords = cfg.def.coords || "xy";
+  const prompt = montarPrompt(await comGlossario(cfg, obra), coords);
+  const imagem = await paraDataUrl(await r.canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
+  const daIa = (bs) => bs.map((b) => entrada({ l: b.l * r.tw, t: b.t * r.th, r: b.r * r.tw, b: b.b * r.th }, b.texto));
+  const uso = {};
+  const resposta = await filaApi(prioridade, () => {
+    if (est.controle.signal.aborted) throw abortado();
+    return chamar(cfg, { prompt, imagem, depois: textoContexto(est.contexto) },
+      { sinal: est.controle.signal, uso, aoTexto: (acum) => aoParcial(daIa(parciais(acum, coords))) });
+  }, dono);
+  const lidoIa = interpretar(resposta, coords);
+  registrar(est, cfg, obra, resposta, uso, lidoIa.map((b) => b.texto));
+  return daIa(lidoIa);
+}
+
+/**
+ * Modo inglês: traduz o texto lido. O que está na tela vai na hora; páginas adiantadas esperam um
+ * instante e vão juntas numa chamada só (menos chamadas, e a IA vê o diálogo em sequência).
+ */
+function traduzirTextos(est, cfg, textos, prioridade, obra, aoParcial) {
+  return new Promise((ok, falha) => {
+    const job = { textos, aoParcial, ok, falha, prioridade, obra };
+    if (prioridade <= 0) return despachar(est, cfg, [job]);
+    const lote = (est.lote ??= { jobs: [], timer: 0, cfg });
+    lote.jobs.push(job);
+    clearTimeout(lote.timer);
+    const itens = lote.jobs.reduce((n, j) => n + j.textos.length, 0);
+    if (lote.jobs.length >= 4 || itens >= 30) despachar(est, lote.cfg, lote.jobs.splice(0));
+    else lote.timer = setTimeout(() => despachar(est, lote.cfg, lote.jobs.splice(0)), 350);
+  });
+}
+async function despachar(est, cfg, jobs) {
+  if (!jobs.length) return;
+  if (est.lote && !est.lote.jobs.length) est.lote = null;
+  try {
+    const obra = jobs[0].obra;
+    const todos = jobs.flatMap((j) => j.textos);
+    const prompt = montarPromptTexto(await comGlossario(cfg, obra));
+    const depois = [itensTexto(todos), textoContexto(est.contexto)].filter(Boolean).join("\n");
+    const uso = {};
+    const resposta = await filaApi(Math.min(...jobs.map((j) => j.prioridade)), () => {
+      if (est.controle.signal.aborted) throw abortado();
+      return chamar(cfg, { prompt, depois }, {
+        sinal: est.controle.signal, uso,
+        aoTexto: (acum) => {
+          const p = parciaisTexto(acum);
+          let k = 0;
+          for (const j of jobs) { j.aoParcial(p.slice(k, k + j.textos.length)); k += j.textos.length; }
+        },
+      });
+    });
+    const traduzidos = interpretarTexto(resposta, todos.length);
+    registrar(est, cfg, obra, resposta, uso, traduzidos);
+    let k = 0;
+    for (const j of jobs) j.ok(traduzidos.slice(k, (k += j.textos.length)));
+  } catch (e) {
+    for (const j of jobs) j.falha(e);
+  }
+}
+
+// ---------- OCR (Tesseract) num documento invisível da extensão ----------
+let ocrPronto = null;
+function garantirOcr() {
+  return (ocrPronto ??= (async () => {
+    const existe = (await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] })).length;
+    if (!existe) {
+      await chrome.offscreen.createDocument({
+        url: "ocr.html", reasons: ["WORKERS"], justification: "Ler o texto das páginas em inglês no próprio PC (Tesseract)",
+      });
+    }
+  })().catch((e) => { ocrPronto = null; throw e; }));
+}
+/** O que o OCR leu no pedaço ({ grupos (um por balão), linhas }), ou null se ele não estiver disponível. */
+async function lerOcr(canvas) {
+  try {
+    await garantirOcr();
+    const png = await paraDataUrl(await canvas.convertToBlob({ type: "image/png" }));
+    const r = await chrome.runtime.sendMessage({ alvo: "ocr", imagem: png });
+    if (!r || r.erro) throw new Error(r?.erro || "o OCR não respondeu");
+    const linhas = linhasDoTsv(r.tsv);
+    return { grupos: agruparLinhas(linhas), linhas };
+  } catch (e) {
+    console.warn("OCR indisponível, vai pela IA com imagem:", e);
+    ocrPronto = null;
+    return null;
+  }
+}
+
+/** Texto sobre o desenho: reconstrói o fundo atrás dele (imagem pequena que a página estica por cima). */
+async function comRemendos(itens, pixels, paraPx) {
+  return Promise.all(itens.map(async (it) => {
+    if (it.uniforme || !it.texto) return it;
+    const rem = preencherBordas(pixels, paraPx(it.cobre), 96);
+    const c = new OffscreenCanvas(rem.w, rem.h);
+    c.getContext("2d").putImageData(new ImageData(rem.data, rem.w, rem.h), 0, 0);
+    return { ...it, remendo: await paraDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.85 })) };
+  }));
 }
 
 // ---------- tradução pela imagem original ----------
@@ -140,8 +370,7 @@ const imagens = new Map(); // endereço → Promise<{ assinatura, bitmap() }>, s
 
 async function traduzirImagem(est, m) {
   const cfg = await configPronta(m.manual);
-  const coords = cfg.def.coords || "xy";
-  const prompt = montarPrompt(cfg, coords);
+  const obra = obraDe(est, m);
   const idUrl = hashTexto(m.url);
   const [y0, y1] = m.faixa;
   const partes = pedacos({ x: 0, y: 0, w: m.w, h: m.h }).map((q, i) => ({ ...q, i }))
@@ -153,13 +382,14 @@ async function traduzirImagem(est, m) {
   const resultados = await Promise.allSettled(partes.map(async (q, k) => {
     const chaveCache = `${cfg.idioma}|${m.url}|${q.x},${q.y},${q.w},${q.h}`;
     let itens = await cache("ler", chaveCache);
-    if (!itens) {
+    if (itens) contarUso("cache");
+    else {
       let p = est.emAndamento.get(chaveCache); // o mesmo pedaço pedido de novo antes de terminar
       if (!p) {
-        p = filaApi(m.prioridade, () => traduzirPedacoImagem(est, cfg, coords, prompt, m, q, idUrl, (parcial) => {
+        p = traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, (parcial) => {
           listas[k] = parcial;
           atualizar();
-        }), { est, url: m.url });
+        });
         est.emAndamento.set(chaveCache, p);
         p.then((v) => cache("gravar", chaveCache, v), () => {}).finally(() => est.emAndamento.delete(chaveCache));
       }
@@ -175,46 +405,51 @@ async function traduzirImagem(est, m) {
   enviar(est, { rid: m.rid, tipo: "fim", lista: listas.flat(), total: partes.length });
 }
 
-async function traduzirPedacoImagem(est, cfg, coords, prompt, m, q, idUrl, aoParcial) {
-  if (est.controle.signal.aborted) throw abortado();
-  const arquivo = await baixar(m.url, est.pagina);
-  // mesma imagem com outro endereço (links que expiram, servidores que mudam a cada visita): reaproveita
-  const chaveConteudo = `${cfg.idioma}|#${arquivo.assinatura}|${q.x},${q.y},${q.w},${q.h}`;
-  const salvo = await cache("ler", chaveConteudo);
-  if (salvo) return salvo.map((it) => ({ ...it, chave: it.chave.replace(/^i\|[^|]*\|/, `i|${idUrl}|`) }));
-  const img = await arquivo.bitmap();
-  // m.w/m.h são do <img> na página; a imagem baixada pode vir noutro tamanho
-  const fx = img.width / m.w, fy = img.height / m.h;
-  const tw = Math.max(1, Math.round(q.w * fx)), th = Math.max(1, Math.round(q.h * fy));
-  const canvas = new OffscreenCanvas(tw, th);
-  const g = canvas.getContext("2d", { willReadFrequently: true });
-  g.drawImage(img, q.x * fx, q.y * fy, q.w * fx, q.h * fy, 0, 0, tw, th);
-  const pixels = g.getImageData(0, 0, tw, th);
-  if (amostrar(pixels, { x: 0, y: 0, w: tw, h: th }).desvio < 4) return []; // pedaço liso: nada a traduzir
-  const recorte = await paraDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
+async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
+  const dono = { est, url: m.url };
+  const trocarChave = (it) => ({ ...it, chave: it.chave.replace(/^i\|[^|]*\|/, `i|${idUrl}|`) });
+  // parte local (baixar, recortar, ler): numa fila própria, para não ocupar a vez das chamadas à IA
+  const r = await filaLocal(m.prioridade, async () => {
+    if (est.controle.signal.aborted) throw abortado();
+    const arquivo = await baixar(m.url, est.pagina);
+    // mesma imagem com outro endereço (links que expiram, servidores que mudam a cada visita): reaproveita
+    const chaveConteudo = `${cfg.idioma}|#${arquivo.assinatura}|${q.x},${q.y},${q.w},${q.h}`;
+    const salvo = await cache("ler", chaveConteudo);
+    if (salvo) {
+      contarUso("cache");
+      return { itens: salvo.map(trocarChave) };
+    }
+    const img = await arquivo.bitmap();
+    // m.w/m.h são do <img> na página; a imagem baixada pode vir noutro tamanho
+    const fx = img.width / m.w, fy = img.height / m.h;
+    const tw = Math.max(1, Math.round(q.w * fx)), th = Math.max(1, Math.round(q.h * fy));
+    const canvas = new OffscreenCanvas(tw, th);
+    const g = canvas.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, q.x * fx, q.y * fy, q.w * fx, q.h * fy, 0, 0, tw, th);
+    const pixels = g.getImageData(0, 0, tw, th);
+    if (amostrar(pixels, { x: 0, y: 0, w: tw, h: th }).desvio < 4) return { itens: [] }; // pedaço liso
+    return { canvas, pixels, tw, th, chaveConteudo, ocr: m.ocr ? await lerOcr(canvas) : null };
+  }, dono);
+  if (r.itens) return r.itens;
 
-  const analises = new Map();
-  const processar = (bs) => mesclar(bs.flatMap((b) => {
-    const cx = q.x + ((b.l + b.r) / 2) * q.w, cy = q.y + ((b.t + b.b) / 2) * q.h;
+  const norm = (c) => ({
+    l: (q.x + (c.l / r.tw) * q.w) / m.w, t: (q.y + (c.t / r.th) * q.h) / m.h,
+    r: (q.x + (c.r / r.tw) * q.w) / m.w, b: (q.y + (c.b / r.th) * q.h) / m.h,
+  });
+  const paraItens = (entradas) => mesclar(entradas.flatMap((e) => {
+    const cx = q.x + ((e.px.l + e.px.r) / 2 / r.tw) * q.w, cy = q.y + ((e.px.t + e.px.b) / 2 / r.th) * q.h;
     if (cx < q.dono.x0 || cx > q.dono.x1 || cy < q.dono.y0 || cy > q.dono.y1) return []; // é de outro pedaço
-    const px = { l: b.l * tw, t: b.t * th, r: b.r * tw, b: b.b * th };
-    const id = `${Math.round(px.l)},${Math.round(px.t)},${Math.round(px.r)},${Math.round(px.b)}`;
-    let a = analises.get(id);
-    if (!a) analises.set(id, (a = analisarBalao(pixels, px)));
-    const norm = (c) => ({
-      l: (q.x + (c.l / tw) * q.w) / m.w, t: (q.y + (c.t / th) * q.h) / m.h,
-      r: (q.x + (c.r / tw) * q.w) / m.w, b: (q.y + (c.b / th) * q.h) / m.h,
-    });
     return [{
-      chave: `i|${idUrl}|${q.i}|${id}`, texto: b.texto,
-      fundo: a.fundo, claro: a.claro, uniforme: a.uniforme, cobre: norm(a.cobre), area: norm(a.area),
+      chave: `i|${idUrl}|${q.i}|${e.id}`, texto: e.texto,
+      fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: norm(e.a.cobre), area: norm(e.a.area),
     }];
   }));
-  const resposta = await chamar(cfg, recorte, prompt, (acum) => aoParcial(processar(parciais(acum, coords))),
-    est.controle.signal, textoContexto(est.contexto));
-  const itens = processar(interpretar(resposta, coords));
-  lembrar(est, itens, resposta);
-  cache("gravar", chaveConteudo, itens);
+  const entradas = await lerPedaco(est, cfg, r, { prioridade: m.prioridade, obra, dono, aoParcial: (es) => aoParcial(paraItens(es)) });
+  const itens = await comRemendos(paraItens(entradas), r.pixels, (c) => ({
+    l: ((c.l * m.w - q.x) / q.w) * r.tw, t: ((c.t * m.h - q.y) / q.h) * r.th,
+    r: ((c.r * m.w - q.x) / q.w) * r.tw, b: ((c.b * m.h - q.y) / q.h) * r.th,
+  }));
+  cache("gravar", r.chaveConteudo, itens);
   return itens;
 }
 
@@ -241,7 +476,7 @@ async function baixarImagem(url, pagina) {
   // impressão digital do arquivo (~5 ms por MB): identifica a mesma página em outro endereço
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   const assinatura = [...digest.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  let bitmap = null; // só decodifica se precisar chamar a IA
+  let bitmap = null; // só decodifica se precisar ler a imagem
   return {
     assinatura,
     bitmap: () => (bitmap ??= createImageBitmap(new Blob([bytes], { type: tipo })).catch(() => {
@@ -282,6 +517,7 @@ async function capturar(windowId) {
 
 async function traduzirPrint(est, m) {
   const cfg = await configPronta(m.manual);
+  const obra = obraDe(est, m);
   const tab = await chrome.tabs.get(est.tabId);
   if (!tab.active) throw new Error("a aba precisa estar visível");
   const print = await capturar(tab.windowId);
@@ -291,46 +527,52 @@ async function traduzirPrint(est, m) {
   const tela = new OffscreenCanvas(W, H).getContext("2d", { willReadFrequently: true });
   tela.drawImage(bitmap, 0, 0);
   const pixels = tela.getImageData(0, 0, W, H);
-
-  const coords = cfg.def.coords || "xy";
-  const prompt = montarPrompt(cfg, coords);
   const partes = pedacos({ x: m.area.x * W, y: m.area.y * H, w: m.area.w * W, h: m.area.h * H });
-  const analises = new Map();
-  const processar = (bs, q) => mesclar(paraTela(bs, { x: q.x / W, y: q.y / H, w: q.w / W, h: q.h / H }).flatMap((b) => {
-    const px = { l: b.l * W, t: b.t * H, r: b.r * W, b: b.b * H };
-    const cx = (px.l + px.r) / 2, cy = (px.t + px.b) / 2;
-    if (cx < q.dono.x0 || cx > q.dono.x1 || cy < q.dono.y0 || cy > q.dono.y1) return [];
-    const id = `${Math.round(px.l)},${Math.round(px.t)},${Math.round(px.r)},${Math.round(px.b)}`;
-    let a = analises.get(id);
-    if (!a) analises.set(id, (a = analisarBalao(pixels, px)));
-    const norm = (c) => ({ l: c.l / W, t: c.t / H, r: c.r / W, b: c.b / H });
-    return [{ chave: `p|${m.rid}|${id}`, texto: b.texto, fundo: a.fundo, claro: a.claro, uniforme: a.uniforme, cobre: norm(a.cobre), area: norm(a.area) }];
-  }));
+  const dono = { est, url: "" };
 
   const listas = partes.map(() => []);
   let prontos = 0;
   const atualizar = agendador(() => enviar(est, { rid: m.rid, tipo: "parcial", lista: listas.flat(), prontos, total: partes.length }));
   const resultados = await Promise.allSettled(partes.map(async (q, i) => {
     const { hash, desvio } = amostrar(pixels, q);
-    if (desvio >= 4) { // pedaço liso não tem o que traduzir
-      const chaveCache = `${cfg.idioma}|p|${hash}`;
-      let bs = await cache("ler", chaveCache);
-      if (!bs) {
-        bs = await filaApi(m.prioridade, async () => {
-          if (est.controle.signal.aborted) throw abortado();
-          const recorte = await recortar(bitmap, q);
-          const resposta = await chamar(cfg, recorte, prompt, (acum) => {
-            listas[i] = processar(parciais(acum, coords), q);
-            atualizar();
-          }, est.controle.signal, textoContexto(est.contexto));
-          const lido = interpretar(resposta, coords);
-          lembrar(est, lido, resposta);
-          return lido;
-        });
-        cache("gravar", chaveCache, bs);
-      }
-      listas[i] = processar(bs, q);
+    if (desvio < 4) { prontos++; return atualizar(); } // pedaço liso: nada a traduzir
+    const qx = Math.round(q.x), qy = Math.round(q.y);
+    const r = await filaLocal(m.prioridade, async () => {
+      if (est.controle.signal.aborted) throw abortado();
+      const tw = Math.max(1, Math.round(q.w)), th = Math.max(1, Math.round(q.h));
+      const canvas = new OffscreenCanvas(tw, th);
+      const g = canvas.getContext("2d", { willReadFrequently: true });
+      g.drawImage(bitmap, qx, qy, tw, th, 0, 0, tw, th);
+      return { canvas, pixels: g.getImageData(0, 0, tw, th), tw, th };
+    }, dono);
+    const paraItens = (entradas) => mesclar(entradas.flatMap((e) => {
+      const cx = qx + (e.px.l + e.px.r) / 2, cy = qy + (e.px.t + e.px.b) / 2;
+      if (cx < q.dono.x0 || cx > q.dono.x1 || cy < q.dono.y0 || cy > q.dono.y1) return [];
+      const tela = (c) => ({ l: (qx + c.l) / W, t: (qy + c.t) / H, r: (qx + c.r) / W, b: (qy + c.b) / H });
+      return [{
+        chave: `p|${m.rid}|${qx + Math.round(e.px.l)},${qy + Math.round(e.px.t)}`, texto: e.texto,
+        fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: tela(e.a.cobre), area: tela(e.a.area),
+      }];
+    }));
+    // o cache do print guarda as falas (caixa no pedaço + texto); a análise do balão é refeita na hora
+    const chaveCache = `${cfg.idioma}|p|${hash}`;
+    const salvo = await cache("ler", chaveCache);
+    let entradas;
+    if (salvo) {
+      contarUso("cache");
+      entradas = salvo.map((s) => {
+        const px = { l: s.l * r.tw, t: s.t * r.th, r: s.r * r.tw, b: s.b * r.th };
+        return { id: "", px, texto: s.texto, a: analisarBalao(r.pixels, px) };
+      });
+    } else {
+      if (m.ocr) r.ocr = await filaLocal(m.prioridade, () => lerOcr(r.canvas), dono);
+      entradas = await lerPedaco(est, cfg, r, {
+        prioridade: m.prioridade, obra, dono,
+        aoParcial: (es) => { listas[i] = paraItens(es); atualizar(); },
+      });
+      cache("gravar", chaveCache, entradas.map((e) => ({ l: e.px.l / r.tw, t: e.px.t / r.th, r: e.px.r / r.tw, b: e.px.b / r.th, texto: e.texto })));
     }
+    listas[i] = await comRemendos(paraItens(entradas), pixels, (c) => ({ l: c.l * W, t: c.t * H, r: c.r * W, b: c.b * H }));
     prontos++;
     atualizar();
   }));
@@ -338,14 +580,6 @@ async function traduzirPrint(est, m) {
   const falha = resultados.find((r) => r.status === "rejected");
   if (falha && listas.every((l) => !l.length)) throw falha.reason;
   enviar(est, { rid: m.rid, tipo: "fim", lista: listas.flat(), total: partes.length });
-}
-
-/** Corta o pedaço {x,y,w,h} (pixels) do print e devolve um data URL JPEG. */
-async function recortar(bitmap, q) {
-  const w = Math.max(1, Math.round(q.w)), h = Math.max(1, Math.round(q.h));
-  const canvas = new OffscreenCanvas(w, h);
-  canvas.getContext("2d").drawImage(bitmap, q.x, q.y, w, h, 0, 0, w, h);
-  return paraDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
 }
 
 function paraDataUrl(blob) {
@@ -378,6 +612,8 @@ async function testar() {
   const imagem = await paraDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.9 }));
   const coords = cfg.def.coords || "xy";
   const inicio = Date.now();
-  const resposta = await chamar(cfg, imagem, montarPrompt(cfg, coords));
+  const uso = {};
+  const resposta = await chamar(cfg, { prompt: montarPrompt(cfg, coords), imagem }, { uso });
+  registrar({ contexto: [] }, cfg, "", resposta, uso, []);
   return { ms: Date.now() - inicio, baloes: interpretar(resposta, coords), bruto: resposta.slice(0, 1500) };
 }

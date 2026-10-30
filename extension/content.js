@@ -5,9 +5,10 @@ if (!window.__mangaTradutor) {
   window.__mangaTradutor = true;
   (() => {
     const site = location.hostname;
-    const CHAVES_PREF = ["fonte", "maiusculas", "idioma", "auto", "adiantar"];
+    const CHAVES_PREF = ["fonte", "maiusculas", "idioma", "auto", "adiantar", "ingles", "semTeclaUnica"];
     let atalhos = { ...ATALHOS_PADRAO };
-    let pref = { fonte: "quadrinhos", maiusculas: false, idioma: "pt-BR", auto: {}, adiantar: "todas" };
+    let pref = { fonte: "quadrinhos", maiusculas: false, idioma: "pt-BR", auto: {}, adiantar: "todas", ingles: {}, semTeclaUnica: {} };
+    const ocrLigado = () => !!pref.ingles?.[site]; // site em inglês: o PC lê o texto (Tesseract), a IA só traduz
     let autoPausado = false;
     const autoLigado = () => !!pref.auto?.[site] && !autoPausado;
 
@@ -76,6 +77,7 @@ if (!window.__mangaTradutor) {
         if (!combo?.length || !mesmoCombo(combo, [...apertadas])) continue;
         // tecla comum (sem Ctrl/Alt/Meta) não dispara enquanto o usuário digita
         const comum = combo.every((t) => !["Ctrl", "Alt", "Meta"].includes(t) && !Object.values(BOTOES_MOUSE).includes(t));
+        if (comum && pref.semTeclaUnica?.[site]) continue; // desligado neste site (conflita com os atalhos dele)
         if (comum && editavel(e.composedPath?.()[0] || e.target)) return false;
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -144,7 +146,7 @@ if (!window.__mangaTradutor) {
       montar(); // a camada nasce na hora (a parte síncrona), antes de qualquer resposta chegar
       const rid = ++ultimoRid;
       try {
-        conectar().postMessage({ ...msg, rid });
+        conectar().postMessage({ ...msg, rid, titulo: document.title }); // o título identifica a obra (glossário automático)
       } catch {
         aviso("A extensão foi atualizada: recarregue a página", "erro");
         return 0;
@@ -259,7 +261,7 @@ if (!window.__mangaTradutor) {
       const area = await selecionarArea();
       if (!area) return;
       comecarManual();
-      await pedirPrint(area, true);
+      await pedirPrint(area, true, undefined, false); // recorte vai sempre pela IA com imagem: é o "traduzir com capricho"
       if (manual.pendentes) aviso("Traduzindo…");
     }
 
@@ -276,13 +278,13 @@ if (!window.__mangaTradutor) {
         if (!faltam.length) return 0;
         faixa = [faltam[0][0], faltam.at(-1)[1]];
       }
-      const rid = pedir({ tipo: "imagem", url, w: el.naturalWidth, h: el.naturalHeight, faixa, prioridade, manual: manualmente });
+      const rid = pedir({ tipo: "imagem", url, w: el.naturalWidth, h: el.naturalHeight, faixa, prioridade, manual: manualmente, ocr: ocrLigado() });
       if (rid) cob.pend.set(rid, faixa);
       return rid;
     }
 
     /** Print de uma área da tela (sem nada nosso por cima na hora do print). */
-    async function pedirPrint(area, manualmente, faixas) {
+    async function pedirPrint(area, manualmente, faixas, ocr = ocrLigado()) {
       await montar();
       const midias = listarMidias();
       const tela = { w: innerWidth, h: innerHeight, sx: scrollX, sy: scrollY };
@@ -291,7 +293,7 @@ if (!window.__mangaTradutor) {
       reexibir = setTimeout(mostrarCamada, 2500);
       await quadro();
       await quadro();
-      return pedir({ tipo: "print", area, manual: manualmente, prioridade: manualmente ? 0 : 0.5 }, { midias, tela, faixas });
+      return pedir({ tipo: "print", area, manual: manualmente, prioridade: manualmente ? 0 : 0.5, ocr }, { midias, tela, faixas });
     }
 
     function subtrair([a, b], cortes) {
@@ -461,6 +463,7 @@ if (!window.__mangaTradutor) {
         if (!reg && !(reg = criarBalao(b, p))) continue;
         reg.rid = p.rid;
         geometria(reg, b, p);
+        if (b.remendo && b.remendo !== reg.remendo) desenharRemendo(reg, b.remendo);
         if (b.texto && b.texto !== reg.texto) {
           reg.texto = b.texto;
           reg.txt.textContent = b.texto;
@@ -587,6 +590,23 @@ if (!window.__mangaTradutor) {
       };
     }
 
+    /**
+     * Fundo reconstruído atrás de texto escrito sobre o desenho. Vai num <canvas> (decodificado aqui),
+     * não como imagem: a política de segurança de alguns sites bloqueia imagens "data:".
+     */
+    async function desenharRemendo(reg, url) {
+      reg.remendo = url;
+      try {
+        const bytes = Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+        const img = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+        const cv = reg.cobre.querySelector("canvas") || reg.cobre.appendChild(document.createElement("canvas"));
+        cv.width = img.width;
+        cv.height = img.height;
+        cv.getContext("2d").drawImage(img, 0, 0);
+        reg.el.classList.add("com-remendo");
+      } catch { /* fica a cor lisa */ }
+    }
+
     function remover(k) {
       baloes.get(k)?.el.remove();
       baloes.delete(k);
@@ -683,6 +703,16 @@ if (!window.__mangaTradutor) {
       menu.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + "px";
       menu.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
       menu.querySelector("button").focus();
+      // teclado: setas andam entre as opções, Enter escolhe, Esc fecha
+      menu.addEventListener("keydown", (e) => {
+        const bs = [...menu.querySelectorAll("button")];
+        const i = bs.indexOf(raiz.activeElement);
+        const ir = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: bs.length - 1 }[e.key];
+        if (ir === undefined) return;
+        e.preventDefault();
+        e.stopPropagation();
+        bs[(ir + bs.length) % bs.length].focus();
+      });
     }
     function fecharMenu() {
       menu?.remove();

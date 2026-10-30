@@ -89,6 +89,17 @@
   @keyframes pisca { 50% { opacity: .25; } }
 
   details summary { cursor: pointer; font-weight: 700; }
+  .glossarios { display: grid; gap: 8px; margin-top: 10px; }
+  .obra { padding: 10px 12px; border: 2px dashed var(--linha); border-radius: 8px; }
+  .obra header { display: flex; align-items: center; gap: 8px; }
+  .obra header b { flex: 1; overflow-wrap: anywhere; }
+  .obra header button { padding: 4px 10px; font-size: 12px; }
+  .obra p { margin: 6px 0 0; color: var(--tinta-suave); font-size: 12.5px; overflow-wrap: anywhere; }
+  table.uso { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.uso th, table.uso td { padding: 7px 8px; text-align: right; border-bottom: 1.5px dashed var(--linha); }
+  table.uso th:first-child, table.uso td:first-child { text-align: left; }
+  table.uso thead th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-suave); }
+  table.uso td:first-child { font-weight: 600; }
   pre { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; margin: 10px 0 0; padding: 10px; background: #fff; border: 2px solid var(--tinta); border-radius: 8px; font-size: 12px; }
 </style>
 
@@ -166,6 +177,11 @@
       <textarea id="glossario" spellcheck="false" placeholder="Um por linha, original = tradução&#10;Gomu Gomu no Mi = Fruta da Borracha&#10;Kaizoku = Pirata"></textarea>
       <p class="ajuda">Nomes, golpes e termos que devem sair sempre do mesmo jeito.</p>
     </div>
+    <label class="opcao">
+      <span><b>Glossário automático</b><small>A IA anota nomes de personagens, lugares e golpes de cada obra, e eles saem sempre iguais</small></span>
+      <span class="chave-liga"><input type="checkbox" id="aprender"><span></span></span>
+    </label>
+    <div class="glossarios" id="glossarios"></div>
   </section>
 
   <section class="quadro">
@@ -193,13 +209,23 @@
   </section>
 
   <section class="quadro">
-    <h2 class="titulo"><span>04</span> Diagnóstico</h2>
+    <h2 class="titulo"><span>04</span> Uso</h2>
+    <p class="sub" id="usoNota">Chamadas à IA e tokens gastos, e quanto o cache e a leitura no PC economizaram.</p>
+    <table class="uso">
+      <thead><tr><th></th><th>Hoje</th><th>Total</th></tr></thead>
+      <tbody id="uso"></tbody>
+    </table>
+    <p class="ajuda" id="cacheInfo" style="margin-top:12px"></p>
+  </section>
+
+  <section class="quadro">
+    <h2 class="titulo"><span>05</span> Diagnóstico</h2>
     <p class="sub">Para quando algo não sai como esperado.</p>
     <details>
       <summary>Última resposta da IA</summary>
       <pre id="ultima">Nada ainda nesta sessão do navegador.</pre>
     </details>
-    <p class="ajuda" style="margin-top:14px">As traduções ficam guardadas neste navegador (valem para qualquer IA): voltar a uma página não gasta tokens de novo.</p>
+    <p class="ajuda" style="margin-top:14px">As traduções ficam guardadas neste navegador (valem para qualquer IA): voltar a uma página não gasta tokens de novo. Passando de 20.000 pedaços, as mais antigas saem sozinhas.</p>
     <p style="margin:10px 0 0"><button class="secundario" id="limparCache">Limpar traduções guardadas</button>
       <span class="ajuda" id="cacheOk" style="margin-left:8px"></span></p>
   </section>

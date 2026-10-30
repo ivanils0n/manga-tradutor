@@ -4,7 +4,7 @@ export const PROVEDORES = {
   deepseek: {
     nome: "DeepSeek", tipo: "openai", url: "https://api.deepseek.com", modelo: "deepseek-flash",
     sugestoes: ["deepseek-flash"], site: "https://platform.deepseek.com/api_keys",
-    extras: { thinking: { type: "disabled" }, response_format: { type: "json_object" } },
+    extras: { thinking: { type: "disabled" }, response_format: { type: "json_object" }, stream_options: { include_usage: true } },
   },
   gemini: {
     nome: "Google Gemini", tipo: "gemini", url: "https://generativelanguage.googleapis.com",
@@ -15,7 +15,7 @@ export const PROVEDORES = {
   openai: {
     nome: "OpenAI", tipo: "openai", url: "https://api.openai.com/v1", modelo: "gpt-4.1-mini",
     sugestoes: ["gpt-4.1-mini", "gpt-4.1"], site: "https://platform.openai.com/api-keys",
-    extras: { response_format: { type: "json_object" } },
+    extras: { response_format: { type: "json_object" }, stream_options: { include_usage: true } },
   },
   claude: {
     nome: "Anthropic Claude", tipo: "claude", url: "https://api.anthropic.com", modelo: "claude-haiku-5-5",
@@ -43,6 +43,7 @@ export const PADRAO = {
   provedor: "deepseek", chaves: {}, modelos: {}, urls: {},
   idioma: "pt-BR", honorificos: true, onomatopeias: false, maiusculas: false, fonte: "quadrinhos", glossario: "",
   adiantar: "todas", // modo ao rolar: "tela", "3", "10" (telas à frente) ou "todas" as páginas carregadas
+  aprender: true, // glossário automático: nomes de personagens, lugares e golpes ficam iguais em toda a obra
 };
 
 /** Configuração pronta para uso: provedor escolhido já com chave, modelo e URL resolvidos. */
@@ -66,4 +67,13 @@ export function faltaConfig(cfg) {
   if (!cfg.url) return "Falta o endereço da API";
   if (!cfg.modelo) return "Falta o modelo";
   return "";
+}
+
+/** a é mais nova que b? ("2.10" > "2.9") */
+export function versaoMaior(a, b) {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
 }

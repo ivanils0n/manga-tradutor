@@ -25,6 +25,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSAO=$(node -p "require('./manifest.json').version")
           zip -r ../manga-tradutor-extensao.zip . -x 'tradutor.test.mjs'
           gh release delete extensao --yes --cleanup-tag || true
-          gh release create extensao ../manga-tradutor-extensao.zip --title "Extensão – última versão" --notes "Gerado do commit ${{ github.sha }}" --target ${{ github.sha }} --latest=false
+          # "versao=" nas notas é o que o popup lê para avisar que saiu versão nova
+          gh release create extensao ../manga-tradutor-extensao.zip --title "Extensão – última versão (v$VERSAO)" --notes "versao=$VERSAO · gerado do commit ${{ github.sha }}" --target ${{ github.sha }} --latest=false

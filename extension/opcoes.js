@@ -86,6 +86,30 @@ for (const r of document.querySelectorAll("input[name=fonte]")) {
 }
 $("glossario").value = cfg.glossario || "";
 $("glossario").oninput = atrasar(() => salvar({ glossario: $("glossario").value }), 600);
+$("aprender").checked = cfg.aprender ?? PADRAO.aprender;
+$("aprender").onchange = () => salvar({ aprender: $("aprender").checked });
+
+// glossário automático: o que já foi aprendido em cada obra
+async function mostrarGlossarios() {
+  const { glossarios = {} } = await chrome.storage.local.get("glossarios");
+  const obras = Object.entries(glossarios).sort((a, b) => b[1].t - a[1].t);
+  $("glossarios").replaceChildren(...obras.map(([obra, { termos }]) => {
+    const [site, nome] = obra.split("|");
+    const caixa = document.createElement("div");
+    caixa.className = "obra";
+    caixa.innerHTML = "<header><b></b><button class='secundario'>Esquecer</button></header><p></p>";
+    caixa.querySelector("b").textContent = `${nome || "(todo o site)"} · ${site} · ${termos.length} nome(s)`;
+    caixa.querySelector("p").textContent = termos.map(([a, b]) => (a === b ? a : `${a} → ${b}`)).join(" · ");
+    caixa.querySelector("button").onclick = async () => {
+      const { glossarios: g = {} } = await chrome.storage.local.get("glossarios");
+      delete g[obra];
+      await salvar({ glossarios: g });
+      mostrarGlossarios();
+    };
+    return caixa;
+  }));
+}
+mostrarGlossarios();
 
 // ---------- 03 atalhos ----------
 let atalhos = await lerAtalhos();
@@ -173,7 +197,28 @@ for (const b of document.querySelectorAll("[data-limpar]")) {
   };
 }
 
-// ---------- 04 diagnóstico ----------
+// ---------- 04 uso ----------
+const numero = (n) => Math.round(n || 0).toLocaleString("pt-BR");
+async function mostrarUso() {
+  const { uso = {} } = await chrome.storage.local.get("uso");
+  const hojeStr = new Date().toLocaleDateString("sv");
+  const hoje = uso.dia === hojeStr ? uso.hoje || {} : {}, total = uso.total || {};
+  const linhas = [
+    ["Chamadas à IA", "chamadas"], ["Tokens enviados", "entrada"], ["Tokens recebidos", "saida"],
+    ["Páginas do cache (sem gastar)", "cache"], ["Páginas lidas no PC (inglês)", "ocr"],
+  ];
+  $("uso").replaceChildren(...linhas.map(([rotulo, k]) => {
+    const tr = document.createElement("tr");
+    for (const v of [rotulo, numero(hoje[k]), numero(total[k])]) tr.appendChild(Object.assign(document.createElement("td"), { textContent: v }));
+    return tr;
+  }));
+  if (total.estimado) $("usoNota").textContent += " Algumas IAs não informam os tokens: nesses casos o número é estimado.";
+  const n = await chrome.runtime.sendMessage({ tipo: "infoCache" }).catch(() => 0);
+  $("cacheInfo").textContent = `Traduções guardadas neste navegador: ${numero(n)} pedaço(s) de página.`;
+}
+mostrarUso();
+
+// ---------- 05 diagnóstico ----------
 chrome.storage.session.get("ultimaResposta").then(({ ultimaResposta }) => {
   if (ultimaResposta) $("ultima").textContent = ultimaResposta;
 });
@@ -181,4 +226,5 @@ $("limparCache").onclick = async () => {
   await chrome.runtime.sendMessage({ tipo: "limparCache" });
   await chrome.storage.session.clear();
   $("cacheOk").textContent = "Pronto: as próximas traduções serão feitas de novo.";
+  mostrarUso();
 };

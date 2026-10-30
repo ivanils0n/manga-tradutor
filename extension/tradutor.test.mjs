@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar, mesclar, sobreposicao, textoContexto } from "./tradutor.js";
+import {
+  interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar, mesclar, sobreposicao, textoContexto,
+  montarPromptTexto, itensTexto, interpretarTexto, parciaisTexto, nomesDe, juntarGlossario, obraDoTitulo,
+  preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel,
+} from "./tradutor.js";
 import { chamar } from "./provedores.js";
 
 const perto = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
@@ -54,7 +58,7 @@ const pintar = (l, t, r, b, cor) => {
 pintar(0, 0, W, H, [90, 90, 120]); // arte
 pintar(100, 80, 300, 220, [0, 0, 0]); // contorno
 pintar(104, 84, 296, 216, [250, 245, 230]); // interior creme
-pintar(180, 130, 220, 170, [0, 0, 0]); // "texto" japonês, estreito
+for (let ty = 130; ty < 170; ty += 8) for (let tx = 180; tx < 220; tx += 8) pintar(tx, ty, tx + 5, ty + 5, [0, 0, 0]); // "letras" de um texto estreito
 const a = analisarBalao({ data, width: W, height: H }, { l: 178, t: 128, r: 222, b: 172 });
 assert.equal(a.fundo, "#faf5e6");
 assert.ok(a.uniforme && a.claro);
@@ -92,7 +96,9 @@ for (const [tipo, ev] of Object.entries(eventos)) {
   };
   const vistos = [];
   const cfg = { def: { tipo, extras: {} }, modelo: "m", chave: "k", url: "https://x" };
-  const texto = await chamar(cfg, "data:image/jpeg;base64,QUJD", "P", (t) => vistos.push(parciais(t)));
+  const uso = {};
+  const texto = await chamar(cfg, { prompt: "P", imagem: "data:image/jpeg;base64,QUJD" }, { aoTexto: (t) => vistos.push(parciais(t)), uso });
+  assert.ok(uso.estimado && uso.entrada >= 1000, tipo + ": sem contagem da API, estima"); 
   assert.equal(texto, conteudo, tipo);
   assert.ok(vistos.some((bs) => bs.length === 1 && bs[0].texto !== "Olá, tudo bem?"), tipo + ": balão antes do texto completo");
   if (tipo === "gemini") assert.equal(pedido.corpo.contents[0].parts[1].inline_data.data, "QUJD");
@@ -107,10 +113,13 @@ globalThis.fetch = async (_u, init) => {
   if (JSON.parse(init.body).temperature !== undefined) return new Response('{"error":{"message":"temperature unsupported"}}', { status: 400 });
   return new Response(JSON.stringify({ choices: [{ message: { content: '{"t":[]}' } }] }), { headers: { "content-type": "application/json" } });
 };
-assert.equal(await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, "data:,", "P"), '{"t":[]}');
+assert.equal(await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, { prompt: "P", imagem: "data:," }), '{"t":[]}');
 assert.equal(chamadas, 2);
+chamadas = 0; // o modelo que recusou os extras não paga a tentativa dupla de novo
+await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, { prompt: "P", imagem: "data:," });
+assert.equal(chamadas, 1);
 globalThis.fetch = async () => new Response('{"error":{"message":"bad key"}}', { status: 401 });
-await assert.rejects(chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, "data:,", "P"), /Chave da API inválida/);
+await assert.rejects(chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u2" }, { prompt: "P", imagem: "data:," }), /Chave da API inválida/);
 // ---- junção de partes do mesmo balão (linhas/colunas devolvidas separadas)
 const item = (chave, texto, area, cobre = area) => ({ chave, texto, fundo: "#fff", claro: true, uniforme: true, area, cobre });
 const juntos = mesclar([
@@ -133,7 +142,93 @@ globalThis.fetch = async (_u, init) => {
   ultimoCorpo = JSON.parse(init.body);
   return new Response(JSON.stringify({ choices: [{ message: { content: '{"t":[]}' } }] }), { headers: { "content-type": "application/json" } });
 };
-await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u" }, "data:image/jpeg;base64,AA", "P", undefined, undefined, "CTX");
+await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u3" }, { prompt: "P", imagem: "data:image/jpeg;base64,AA", depois: "CTX" });
 assert.deepEqual(ultimoCorpo.messages[0].content.map((c) => c.type), ["text", "image_url", "text"]);
 assert.equal(ultimoCorpo.messages[0].content[2].text, "CTX");
+// modo só texto (inglês lido no PC): nada de imagem; a contagem de tokens da API é usada quando vem
+globalThis.fetch = async (_u, init) => {
+  ultimoCorpo = JSON.parse(init.body);
+  const sse = ['{"choices":[{"delta":{"content":"{\\"t\\":[\\"Oi\\"]}"}}]}', '{"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":9}}']
+    .map((d) => `data: ${d}\n\n`).join("") + "data: [DONE]\n\n";
+  return new Response(sse, { headers: { "content-type": "text/event-stream" } });
+};
+const usoTexto = {};
+assert.equal(await chamar({ def: { tipo: "openai" }, modelo: "m", chave: "k", url: "u4" }, { prompt: "P", depois: "1. Hi" }, { uso: usoTexto }), '{"t":["Oi"]}');
+assert.deepEqual(ultimoCorpo.messages[0].content.map((c) => c.type), ["text", "text"]);
+assert.deepEqual(usoTexto, { entrada: 120, saida: 9 });
+// ---- encaixe pela imagem: caixa da IA deslocada ou apertada demais ainda acha o texto inteiro
+const dentro = (cx, t) => cx.l <= t.l && cx.t <= t.t && cx.r >= t.r && cx.b >= t.b;
+const TXT = { l: 180, t: 130, r: 220, b: 170 }; // o "texto" pintado no balão sintético
+for (const [nome, caixaIA] of [["deslocada", { l: 170, t: 120, r: 212, b: 162 }], ["apertada", { l: 190, t: 140, r: 210, b: 160 }], ["folgada", { l: 150, t: 100, r: 260, b: 200 }]]) {
+  const r = analisarBalao({ data, width: W, height: H }, caixaIA);
+  assert.ok(r.uniforme, nome + ": achou o fundo do balão");
+  assert.ok(dentro(r.cobre, TXT), `${nome}: cobre o texto todo ${JSON.stringify(r.cobre)}`);
+  assert.ok(r.cobre.l >= 104 && r.cobre.r <= 296 && r.cobre.t >= 84 && r.cobre.b <= 216, nome + ": sem passar do contorno");
+  assert.ok(r.cobre.r - r.cobre.l < 70, nome + ": encolheu para o texto");
+}
+
+// ---- legenda sobre degradê: não é balão; fica do tamanho do texto e ganha remendo
+const DW = 600, DH = 200, deg = new Uint8ClampedArray(DW * DH * 4);
+for (let y = 0; y < DH; y++) for (let x = 0; x < DW; x++) { const v = 60 + y; deg.set([v, v + 20, 160, 255], (y * DW + x) * 4); }
+for (let x = 200; x < 400; x += 6) for (let y = 90; y < 110; y++) deg.set([255, 255, 255, 255], (y * DW + x) * 4);
+const leg = analisarBalao({ data: deg, width: DW, height: DH }, { l: 198, t: 88, r: 402, b: 112 });
+assert.equal(leg.uniforme, false);
+assert.ok(leg.area.r - leg.area.l < 260, "não se espalha pelo degradê: " + JSON.stringify(leg.area));
+
+// ---- remendo: degradê da esquerda (preto) para a direita (branco) é reconstruído no meio
+const GW = 200, GH = 100, grad = new Uint8ClampedArray(GW * GH * 4);
+for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { const v = Math.round((x / (GW - 1)) * 255); grad.set([v, v, v, 255], (y * GW + x) * 4); }
+for (let y = 40; y < 60; y++) for (let x = 80; x < 120; x++) grad.set([255, 0, 0, 255], (y * GW + x) * 4); // "texto" vermelho
+const rem = preencherBordas({ data: grad, width: GW, height: GH }, { l: 76, t: 36, r: 124, b: 64 });
+const meio = (rem.h >> 1) * rem.w * 4 + (rem.w >> 1) * 4;
+assert.ok(Math.abs(rem.data[meio] - 127) < 20 && Math.abs(rem.data[meio] - rem.data[meio + 1]) < 4, "meio do remendo é cinza, sem vermelho");
+const esqR = (rem.h >> 1) * rem.w * 4;
+assert.ok(rem.data[esqR] < rem.data[meio], "degradê mantido");
+
+// ---- modo inglês: TSV do Tesseract → linhas → balões
+const tsv = [
+  "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+  "5\t1\t1\t1\t1\t1\t100\t100\t60\t20\t95\tWHERE", "5\t1\t1\t1\t1\t2\t165\t100\t30\t20\t94\tDO",
+  "5\t1\t2\t1\t1\t1\t110\t126\t80\t20\t93\tYOU'RE", "5\t1\t2\t1\t1\t2\t195\t126\t50\t20\t90\tGOING?",
+  "5\t1\t3\t1\t1\t1\t500\t110\t40\t20\t83\t|", "5\t1\t3\t1\t1\t2\t545\t110\t50\t20\t96\tWIN!",
+  "5\t1\t4\t1\t1\t1\t300\t600\t25\t12\t59\titi",
+  "5\t1\t5\t1\t1\t1\t100\t400\t50\t20\t-1\t ",
+].join("\n");
+const linhas = linhasDoTsv(tsv);
+assert.equal(linhas.length, 4);
+const grupos = agruparLinhas(linhas);
+assert.deepEqual(grupos.map((g) => g.texto), ["WHERE DO YOU'RE GOING?", "| WIN!"]); // "iti" é ruído; balões separados
+assert.deepEqual([grupos[0].l, grupos[0].t, grupos[0].r, grupos[0].b], [100, 100, 245, 146]);
+assert.equal(ocrConfiavel(grupos), true);
+assert.equal(ocrConfiavel([{ palavras: [{ conf: 40 }, { conf: 55 }, { conf: 90 }] }]), false);
+assert.equal(ocrConfiavel([]), true); // página sem texto
+const lixo = linhasDoTsv(["5\t1\t1\t1\t1\t1\t0\t0\t9\t9\t3\t‘hi", "5\t1\t2\t1\t1\t1\t0\t20\t9\t9\t34\t1009", "5\t1\t3\t1\t1\t1\t0\t40\t9\t9\t10\t#", "5\t1\t4\t1\t1\t1\t0\t60\t9\t9\t64\twow"].join("\n"));
+assert.deepEqual(agruparLinhas(lixo), []); // tudo ruído…
+assert.equal(ocrConfiavel([], lixo), false); // …mas tanto ruído assim é letra que o OCR não leu: vai pela IA com imagem
+assert.equal(agruparLinhas(linhasDoTsv("5\t1\t1\t1\t1\t1\t0\t0\t40\t20\t90\tWAIT-\n5\t1\t2\t1\t1\t1\t0\t22\t40\t20\t90\tING"))[0].texto, "WAITING");
+// linha partida em pedaços lado a lado (texto esparso) e linhas com vão de quase uma linha: um balão só
+const partida = linhasDoTsv([
+  "5\t1\t1\t1\t1\t1\t470\t400\t12\t15\t75\tI", "5\t1\t1\t1\t1\t2\t486\t400\t60\t15\t75\tTOLD",
+  "5\t1\t2\t1\t1\t1\t552\t401\t140\t15\t96\tYOU ALREADY!",
+  "5\t1\t3\t1\t1\t1\t475\t427\t210\t15\t95\tI'M NOT GOING BACK!",
+].join("\n"));
+assert.deepEqual(agruparLinhas(partida).map((g) => g.texto), ["I TOLD YOU ALREADY! I'M NOT GOING BACK!"]);
+
+// ---- modo inglês: prompt, itens, resposta e streaming
+const pt = montarPromptTexto({ idioma: "pt-BR", honorificos: false, onomatopeias: false, glossario: "Bob = Beto", glossarioAuto: [["Bob", "Roberto"], ["Ann", "Ana"]], aprender: true });
+assert.match(pt, /OCR/);
+assert.match(pt, /Bob→Beto; Ann→Ana/); // o glossário do usuário vence o automático
+assert.match(pt, /"n"/);
+assert.doesNotMatch(montarPrompt({ idioma: "pt-BR" }), /"n"/);
+assert.equal(itensTexto(["Oi", "Tchau"]), "1. Oi\n2. Tchau");
+assert.deepEqual(interpretarTexto('{"t":["Olá"," Ei! "]}', 3), ["Olá", "Ei!", ""]);
+assert.deepEqual(interpretarTexto('{"t":["Olá","Ei, esp', 2), ["Olá", "Ei, esp"]);
+assert.deepEqual(parciaisTexto('{"t":[]}'), []);
+assert.deepEqual(parciaisTexto('{"t":["a\\"b","c"],"n":[["X","Y"]]}'), ['a"b', "c"]);
+assert.deepEqual(nomesDe('{"t":["a"],"n":[["Bob","Beto"],[1,2],["",""]]}'), [["Bob", "Beto"]]);
+assert.deepEqual(nomesDe("lixo"), []);
+assert.deepEqual(juntarGlossario([["Bob", "Beto"], ["Ann", "Ana"]], [["bob", "Roberto"], ["Zé", "Zé"]], 3), [["Ann", "Ana"], ["bob", "Roberto"], ["Zé", "Zé"]]);
+assert.equal(obraDoTitulo("One Piece - Chapter 1100 - MangaDex", "s"), "s|one piece");
+assert.equal(obraDoTitulo("One Piece Capítulo 12", "s"), "s|one piece");
+assert.equal(obraDoTitulo("Chapter 3 - Algo", "s"), "s|");
 console.log("ok");

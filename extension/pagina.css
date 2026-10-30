@@ -22,7 +22,7 @@
 }
 .txt {
   position: absolute; inset: 0;
-  padding: 7% 9%;
+  padding: .3em .5em; /* em, não %: porcentagem de padding vertical segue a largura e esmagava balões largos */
   display: flex; align-items: center; justify-content: center;
   text-align: center; overflow: hidden;
   color: var(--tinta);
@@ -39,6 +39,11 @@
 .sobre-arte { border-radius: 10px; background: color-mix(in srgb, var(--fundo) 90%, transparent); box-shadow: 0 1px 6px #0004; }
 .sobre-arte .cobre { display: none; }
 .sobre-arte .txt { text-shadow: 0 0 2px var(--fundo), 0 0 2px var(--fundo); }
+/* com o fundo reconstruído (remendo), o texto original some de verdade e não sobra caixa por cima do desenho */
+.sobre-arte.com-remendo { background: none; box-shadow: none; }
+.sobre-arte.com-remendo .cobre { display: block; box-shadow: none; border-radius: 6px; }
+.com-remendo .cobre canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; }
+.sobre-arte.com-remendo .txt { text-shadow: 0 0 3px var(--fundo), 0 0 3px var(--fundo), 0 0 1px var(--fundo); }
 
 /* enquanto a tradução não chega: retícula (screentone) andando sobre o texto já coberto */
 .vazio .cobre {
