@@ -19,5 +19,6 @@ Cada push na `main` gera de novo só a parte que mudou.
 ## Extensão (PC)
 1. Baixe e extraia o `.zip` numa pasta fixa.
 2. Abra `chrome://extensions` (ou `edge://extensions`), ligue **Modo do desenvolvedor** e clique em **Carregar sem compactação**, escolhendo a pasta.
-3. Na primeira vez que clicar no ícone, abre a tela para colar a chave da DeepSeek.
-4. Na página do mangá, aperte **Alt+T** para traduzir tudo o que está visível, ou **Alt+R** para recortar só uma parte (também dá pelo ícone da extensão). Clique num balão (ou **Esc**) para fechar. Os atalhos podem ser trocados em `chrome://extensions/shortcuts`.
+3. Clique no ícone da extensão → **Configurações**, cole a chave da DeepSeek e escolha os atalhos (uma tecla ou uma combinação, ex.: `F2` ou `Ctrl + Shift + Q`). Padrão: **Alt + T** traduz a página, **Alt + R** recorta uma parte.
+4. Os balões aparecem cobertos de branco assim que são encontrados, e a tradução entra por cima conforme chega. Clique num balão (ou **Esc**) para fechar.
+5. Depois de instalar ou atualizar, recarregue as abas que já estavam abertas.

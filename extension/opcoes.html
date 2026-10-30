@@ -5,23 +5,45 @@
 <link rel="icon" href="icones/32.png">
 <link rel="stylesheet" href="estilo.css">
 <style>
-  main { max-width: 460px; margin: 48px auto; padding: 0 16px; }
-  .cartao { margin-top: 24px; padding: 20px; border-radius: 16px; background: var(--cartao); border: 1px solid var(--borda); }
+  main { max-width: 480px; margin: 48px auto; padding: 0 16px 48px; }
+  .cartao { margin-top: 20px; padding: 20px; border-radius: 16px; background: var(--cartao); border: 1px solid var(--borda); }
+  .cartao h2 { margin: 0 0 4px; font-size: 15px; }
+  .cartao > p { margin: 0 0 16px; color: var(--suave); font-size: 12px; }
   label { display: block; margin: 0 0 6px; font-weight: 600; }
   label + .ajuda { margin: -2px 0 8px; color: var(--suave); font-size: 12px; }
   .campo { margin-bottom: 18px; }
+  .campo:last-child { margin-bottom: 0; }
   .linha { display: flex; gap: 8px; }
   input {
     width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--borda);
     background: var(--fundo); color: inherit; font: inherit;
   }
   input:focus { border-color: var(--foco); outline: none; }
-  .olho { flex: none; width: 44px; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); color: var(--suave); cursor: pointer; }
+  .olho, .limpar {
+    flex: none; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo);
+    color: var(--suave); cursor: pointer; font: inherit;
+  }
+  .olho { width: 44px; }
+  .limpar { padding: 0 14px; }
+  .limpar:hover, .olho:hover { color: var(--texto); border-color: var(--foco); }
   .acoes { display: flex; align-items: center; gap: 12px; }
-  #ok { color: var(--ok); font-weight: 600; opacity: 0; transition: opacity .2s; }
-  .uso { margin-top: 20px; display: grid; gap: 8px; color: var(--suave); }
-  .uso div { display: flex; align-items: center; gap: 10px; }
-  .uso kbd { margin-left: 0; }
+  .ok { color: var(--ok); font-weight: 600; opacity: 0; transition: opacity .2s; }
+
+  .gravador {
+    flex: 1; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 12px;
+    border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); color: var(--suave);
+    font: inherit; text-align: left; cursor: pointer;
+  }
+  .gravador:hover { border-color: var(--foco); }
+  .gravador kbd { margin: 0; color: var(--texto); font-size: 12px; padding: 3px 8px; }
+  .gravador .mais { color: var(--suave); }
+  .gravador.gravando { border-color: var(--foco); color: var(--texto); box-shadow: 0 0 0 3px #8b7cf633; }
+  .gravador.gravando::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%; background: #f87171;
+    animation: pisca 1s ease-in-out infinite;
+  }
+  .aviso-atalho { min-height: 18px; margin-top: 6px; font-size: 12px; color: var(--erro); }
+  @keyframes pisca { 50% { opacity: .3; } }
 </style>
 <main>
   <div class="topo">
@@ -29,7 +51,7 @@
     <h1>Manga Tradutor<small>Configurações</small></h1>
   </div>
 
-  <div class="cartao">
+  <section class="cartao">
     <div class="campo">
       <label for="chave">Chave da API DeepSeek</label>
       <p class="ajuda">Fica salva só neste navegador.</p>
@@ -44,15 +66,32 @@
     </div>
     <div class="acoes">
       <button class="primario" id="salvar">Salvar</button>
-      <span id="ok" role="status">Salvo ✓</span>
+      <span class="ok" id="ok" role="status">Salvo ✓</span>
     </div>
-  </div>
+  </section>
 
-  <div class="uso">
-    <div><kbd>Alt+T</kbd> traduz tudo que está visível na aba</div>
-    <div><kbd>Alt+R</kbd> deixa você recortar só uma parte</div>
-    <div>Clique num balão ou aperte <kbd>Esc</kbd> para fechar a tradução.</div>
-  </div>
+  <section class="cartao">
+    <h2>Atalhos</h2>
+    <p>Clique no campo e aperte a tecla ou a combinação que quiser (uma ou mais teclas juntas). Salva sozinho.</p>
+    <div class="campo">
+      <label id="r-pagina">Traduzir página inteira</label>
+      <div class="linha">
+        <button class="gravador" data-acao="pagina" aria-labelledby="r-pagina"></button>
+        <button class="limpar" data-acao="pagina">Limpar</button>
+      </div>
+      <div class="aviso-atalho" data-aviso="pagina" role="status"></div>
+    </div>
+    <div class="campo">
+      <label id="r-recortar">Recortar uma parte</label>
+      <div class="linha">
+        <button class="gravador" data-acao="recortar" aria-labelledby="r-recortar"></button>
+        <button class="limpar" data-acao="recortar">Limpar</button>
+      </div>
+      <div class="aviso-atalho" data-aviso="recortar" role="status"></div>
+    </div>
+    <p style="margin:4px 0 0">Clique num balão traduzido ou aperte <kbd>Esc</kbd> para fechar a tradução.</p>
+  </section>
 </main>
+<script src="atalhos.js"></script>
 <script src="opcoes.js"></script>
 </html>
