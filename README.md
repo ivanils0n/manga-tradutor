@@ -29,6 +29,6 @@ Cada push na `main` gera de novo só a parte que mudou.
 ### Como funciona
 - Cada página de mangá é traduzida a partir da própria imagem (baixada com o Referer do site), não de um print: não depende da rolagem e dá para traduzir páginas que ainda não apareceram. Canvas e imagens que o site não deixa baixar vão por print.
 - Páginas de até ~1280 px vão inteiras numa chamada; maiores são cortadas em pedaços, em paralelo e em streaming. Partes em branco não vão para a API.
-- Cada tradução fica guardada no navegador pelo endereço da imagem, valendo para qualquer IA: voltar a uma página, recarregar ou trocar de API não gasta tokens de novo.
+- Cada tradução fica guardada no navegador pelo endereço da imagem e pelo conteúdo do arquivo, valendo para qualquer IA: voltar a uma página, recarregar, trocar de API ou o site mudar o endereço da imagem (links que expiram, servidores que mudam a cada visita) não gasta tokens de novo e aparece na hora.
 - As últimas falas vão junto como contexto, para nomes e tom ficarem coerentes entre páginas.
 - A IA devolve a caixa do texto original e a tradução num JSON compacto. A extensão mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão.

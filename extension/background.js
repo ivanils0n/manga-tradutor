@@ -133,9 +133,10 @@ function lembrar(est, itens, resposta) {
 }
 
 // ---------- tradução pela imagem original ----------
-// Usa os pixels da própria imagem (não um print): não depende da rolagem, o cache vale pelo endereço
-// da imagem e dá para traduzir páginas que ainda nem apareceram na tela.
-const imagens = new Map(); // endereço → Promise<ImageBitmap>, só as últimas (memória)
+// Usa os pixels da própria imagem (não um print): não depende da rolagem e dá para traduzir páginas
+// que ainda nem apareceram na tela. O cache vale pelo endereço (sem nem baixar a imagem) e, se o
+// endereço mudou, pelo conteúdo do arquivo.
+const imagens = new Map(); // endereço → Promise<{ assinatura, bitmap() }>, só as últimas (memória)
 
 async function traduzirImagem(est, m) {
   const cfg = await configPronta(m.manual);
@@ -176,7 +177,12 @@ async function traduzirImagem(est, m) {
 
 async function traduzirPedacoImagem(est, cfg, coords, prompt, m, q, idUrl, aoParcial) {
   if (est.controle.signal.aborted) throw abortado();
-  const img = await baixar(m.url, est.pagina);
+  const arquivo = await baixar(m.url, est.pagina);
+  // mesma imagem com outro endereço (links que expiram, servidores que mudam a cada visita): reaproveita
+  const chaveConteudo = `${cfg.idioma}|#${arquivo.assinatura}|${q.x},${q.y},${q.w},${q.h}`;
+  const salvo = await cache("ler", chaveConteudo);
+  if (salvo) return salvo.map((it) => ({ ...it, chave: it.chave.replace(/^i\|[^|]*\|/, `i|${idUrl}|`) }));
+  const img = await arquivo.bitmap();
   // m.w/m.h são do <img> na página; a imagem baixada pode vir noutro tamanho
   const fx = img.width / m.w, fy = img.height / m.h;
   const tw = Math.max(1, Math.round(q.w * fx)), th = Math.max(1, Math.round(q.h * fy));
@@ -208,6 +214,7 @@ async function traduzirPedacoImagem(est, cfg, coords, prompt, m, q, idUrl, aoPar
     est.controle.signal, textoContexto(est.contexto));
   const itens = processar(interpretar(resposta, coords));
   lembrar(est, itens, resposta);
+  cache("gravar", chaveConteudo, itens);
   return itens;
 }
 
@@ -229,7 +236,18 @@ async function baixarImagem(url, pagina) {
   let r;
   try { r = await fetch(url, { credentials: "include" }); } catch { throw erro("não consegui baixar a imagem"); }
   if (!r.ok) throw erro(`a imagem respondeu ${r.status}`);
-  try { return await createImageBitmap(await r.blob()); } catch { throw erro("formato de imagem não suportado"); }
+  const bytes = await r.arrayBuffer();
+  const tipo = r.headers.get("content-type") || "";
+  // impressão digital do arquivo (~5 ms por MB): identifica a mesma página em outro endereço
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const assinatura = [...digest.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  let bitmap = null; // só decodifica se precisar chamar a IA
+  return {
+    assinatura,
+    bitmap: () => (bitmap ??= createImageBitmap(new Blob([bytes], { type: tipo })).catch(() => {
+      throw erro("formato de imagem não suportado");
+    })),
+  };
 }
 
 /**
