@@ -39,7 +39,13 @@ jobs:
               gecko_android: { strict_min_version: "128.0" },
             };
             fs.writeFileSync(arq, JSON.stringify(m, null, 2));'
-          npx --yes web-ext@8 lint --source-dir ../firefox --self-hosted || true
+          # validador oficial da Mozilla; os problemas viram anotações na execução (não bloqueiam o pacote)
+          npx --yes web-ext@8 lint --source-dir ../firefox --self-hosted --output json > ../lint.json || true
+          node -e '
+            const t = require("fs").readFileSync("../lint.json", "utf8"), r = JSON.parse(t.slice(t.indexOf("{")));
+            console.log(`web-ext lint: ${r.summary.errors} erro(s), ${r.summary.warnings} aviso(s)`);
+            for (const [tipo, nivel] of [["errors", "error"], ["warnings", "warning"]])
+              for (const m of r[tipo]) console.log(`::${nivel} title=${m.code}::${m.file || ""}${m.line ? ":" + m.line : ""} ${m.message}`);' || true
           (cd ../firefox && zip -qr ../manga-tradutor-firefox.zip .)
       - name: Assinar para o Firefox
         if: env.AMO_JWT_ISSUER != ''
