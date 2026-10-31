@@ -43,11 +43,16 @@ async function dispararNaAba(tabId, acao) {
 chrome.runtime.onConnect.addListener((porta) => {
   if (porta.name !== "mt") return;
   const est = {
-    porta, controle: new AbortController(), contexto: [], emAndamento: new Map(), lote: null,
+    porta, controle: new AbortController(), contexto: [], emAndamento: new Map(), lote: null, dados: new Map(),
     tabId: porta.sender?.tab?.id, pagina: porta.sender?.url,
   };
   porta.onDisconnect.addListener(() => est.controle.abort());
   porta.onMessage.addListener((m) => {
+    if (m.tipo === "dados") { // a página mandou a imagem blob: que pedimos (ver dadosDaPagina)
+      const d = est.dados.get(m.url);
+      if (d) m.dados ? d.ok(m.dados) : d.falha(new Error(m.erro || "imagem indisponível"));
+      return;
+    }
     if (m.tipo === "prioridade") {
       for (const f of [filaApi, filaTela, filaLocal]) f.repriorizar(est, m.url, m.prioridade);
       return;
@@ -293,10 +298,12 @@ async function lerPedaco(est, cfg, r, { prioridade, obra, dono, aoParcial }) {
   const lido = r.ocr; // { grupos, linhas } quando o modo inglês leu este pedaço
   if (lido && ocrConfiavel(lido.grupos, lido.linhas)) {
     contarUso("ocr");
-    if (!lido.grupos.length) return [];
-    const base = lido.grupos.map((g) => entrada(g, ""));
+    // o que o OCR leu com pouca confiança é desenho (retícula, cabelo) lido como letra: viraria tradução no meio da arte
+    const grupos = lido.grupos.filter((g) => g.conf >= 50);
+    if (!grupos.length) return [];
+    const base = grupos.map((g) => entrada(g, ""));
     aoParcial(base); // os balões já ficam cobertos antes da IA responder
-    const traduzidos = await traduzirTextos(est, cfg, lido.grupos.map((g) => g.texto), prioridade, obra,
+    const traduzidos = await traduzirTextos(est, cfg, grupos.map((g) => g.texto), prioridade, obra,
       (parcial) => aoParcial(base.map((e, i) => ({ ...e, texto: parcial[i] ?? "" }))));
     return base.map((e, i) => ({ ...e, texto: traduzidos[i] })).filter((e) => e.texto);
   }
@@ -537,7 +544,7 @@ async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
   // parte local (baixar, recortar, ler): numa fila própria, para não ocupar a vez das chamadas à IA
   const r = await filaLocal(m.prioridade, async () => {
     if (est.controle.signal.aborted) throw abortado();
-    const arquivo = await baixar(m.url, est.pagina);
+    const arquivo = await baixar(m.url, est);
     // mesma imagem com outro endereço (links que expiram, servidores que mudam a cada visita): reaproveita
     const chaveConteudo = `${cfg.idioma}|#${arquivo.assinatura}|${q.x},${q.y},${q.w},${q.h}`;
     const salvo = await cache("ler", chaveConteudo);
@@ -582,10 +589,10 @@ async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
   return itens;
 }
 
-function baixar(url, pagina) {
+function baixar(url, est) {
   let p = imagens.get(url);
   if (!p) {
-    p = baixarImagem(url, pagina);
+    p = baixarImagem(url, est);
     imagens.set(url, p);
     p.catch(() => imagens.delete(url));
     if (imagens.size > 4) imagens.delete(imagens.keys().next().value);
@@ -593,10 +600,11 @@ function baixar(url, pagina) {
   return p;
 }
 
-async function baixarImagem(url, pagina) {
+async function baixarImagem(url, est) {
   const erro = (msg) => Object.assign(new Error(msg), { semImagem: true });
+  if (url.startsWith("blob:")) url = await dadosDaPagina(est, url).catch((e) => { throw erro(e.message); });
   if (!/^(https?|data):/.test(url)) throw erro("endereço de imagem não suportado");
-  await liberarReferer(url, pagina);
+  await liberarReferer(url, est.pagina);
   let r;
   try { r = await fetch(url, { credentials: "include" }); } catch { throw erro("não consegui baixar a imagem"); }
   if (!r.ok) throw erro(`a imagem respondeu ${r.status}`);
@@ -612,6 +620,23 @@ async function baixarImagem(url, pagina) {
       throw erro("formato de imagem não suportado");
     })),
   };
+}
+
+/**
+ * Imagem blob: (MangaDex e outros leitores baixam a página e mostram assim): o endereço só vale dentro
+ * da página, então ela mesma lê e manda os bytes (data:). Um pedido por imagem, mesmo com vários pedaços.
+ */
+function dadosDaPagina(est, url) {
+  let d = est.dados.get(url);
+  if (!d) {
+    d = {};
+    d.p = new Promise((ok, falha) => Object.assign(d, { ok, falha }));
+    const t = setTimeout(() => d.falha(new Error("a página não mandou a imagem")), 20000);
+    d.p.catch(() => {}).finally(() => { clearTimeout(t); est.dados.delete(url); });
+    est.dados.set(url, d);
+    enviar(est, { tipo: "dados", url });
+  }
+  return d.p;
 }
 
 /**

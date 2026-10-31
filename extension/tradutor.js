@@ -249,13 +249,15 @@ export function escolherQuadro(img, caixas, w, h, paraImg = (c) => c, ultimo = n
   const nota = (q) => cs.reduce((soma, b) => soma + notaTexto(img, paraImg(aplicarQuadro(b, q, w, h))), 0);
   const eixo = nota({ tipo: "eixo" });
   let melhor = { tipo: "centro", nota: cs[0].escala === 1000 && w !== h ? nota({ tipo: "centro" }) : 0 };
-  for (let s = 0.3; s <= 4; s *= 1.04) {
+  // escala < 0,6 seria o modelo ampliando a imagem (nenhum amplia): com poucas caixas, encaixava por acaso
+  for (let s = 0.6; s <= 4; s *= 1.04) {
     const n = nota({ tipo: "escala", s });
     if (n > melhor.nota) melhor = { tipo: "escala", s, nota: n };
   }
-  if (melhor.tipo === "escala") { // afina a escala achada
-    for (const f of [0.985, 0.995, 1.005, 1.015]) {
-      const q = { tipo: "escala", s: melhor.s * f }, n = nota(q);
+  if (melhor.tipo === "escala") { // afina a escala achada, em passos de 0,5% (a nota muda rápido com a escala)
+    const s0 = melhor.s;
+    for (let f = 0.97; f < 1.031; f += 0.005) {
+      const q = { tipo: "escala", s: s0 * f }, n = nota(q);
       if (n > melhor.nota) melhor = { ...q, nota: n };
     }
   }
@@ -264,7 +266,9 @@ export function escolherQuadro(img, caixas, w, h, paraImg = (c) => c, ultimo = n
     const nUltimo = nota(ultimo);
     if (nUltimo >= melhor.nota - folga && nUltimo > eixo + folga / 2) return ultimo;
   }
-  return melhor.nota > eixo + folga && melhor.nota > eixo * 1.15 ? { tipo: melhor.tipo, ...(melhor.s && { s: melhor.s }) } : { tipo: "eixo" };
+  // o modelo já respondeu no jeito pedido antes: um pedaço com poucas caixas não basta para trocar
+  const [mais, vezes] = ultimo?.tipo === "eixo" ? [0.25 * cs.length, 1.3] : [folga, 1.15];
+  return melhor.nota > eixo + mais && melhor.nota > eixo * vezes ? { tipo: melhor.tipo, ...(melhor.s && { s: melhor.s }) } : { tipo: "eixo" };
 }
 
 /** Converte balões normalizados no recorte r ({x,y,w,h} em 0..1 da tela) para normalizados na tela. */
@@ -648,12 +652,15 @@ export function textoContexto(linhas) {
 
 /**
  * Junta itens do mesmo balão (o modelo às vezes devolve cada linha ou coluna separada): dois itens
- * cujas áreas de balão se sobrepõem bastante são o mesmo balão. Itens: {chave, texto, cobre, area, ...}.
+ * cujas áreas de balão se sobrepõem bastante, ou cujas caixas de texto se cruzam, são a mesma fala.
+ * Itens: {chave, texto, cobre, area, ...}.
  */
-export function mesclar(itens) {
+export function mesclar(itens, soTexto = false) {
   const saida = [];
   for (const it of itens) {
-    const alvo = saida.find((o) => sobreposicao(o.area, it.area) > 0.3);
+    // mesmo balão, ou pedaços da mesma fala cujas caixas de texto se cruzam (letra torta lida aos pedaços);
+    // só encostar não basta: caixas folgadas de balões colados uns nos outros se tocam
+    const alvo = saida.find((o) => (!soTexto && sobreposicao(o.area, it.area) > 0.3) || sobreposicao(o.cobre, it.cobre) > 0.1);
     if (!alvo) { saida.push({ ...it, cobre: { ...it.cobre }, area: { ...it.area }, ...(it.alta && { alta: { ...it.alta } }) }); continue; }
     alvo.texto = [alvo.texto, it.texto].filter(Boolean).join(" ");
     alvo.uniforme = alvo.uniforme && it.uniforme;
@@ -665,7 +672,9 @@ export function mesclar(itens) {
       };
     }
   }
-  return saida;
+  // a caixa juntada cresceu e pode cruzar outro pedaço que veio antes: de novo, só pelo texto (as áreas
+  // crescidas juntariam balões vizinhos)
+  return saida.length < itens.length ? mesclar(saida, true) : saida;
 }
 
 /** Fração da menor caixa coberta pela interseção das duas. */

@@ -134,6 +134,13 @@ assert.equal(juntos.length, 2);
 assert.equal(juntos[0].chave, "a"); // a chave do primeiro fica: o balão não pisca no streaming
 assert.equal(juntos[0].texto, "Ei, espera!");
 assert.deepEqual(juntos[0].cobre, { l: 0.2, t: 0.12, r: 0.32, b: 0.28 });
+// pedaços da mesma fala com as caixas do texto se cruzando (letra torta lida aos pedaços): uma tradução só
+const tortos = mesclar([
+  item("x", "Nada", { l: 0.10, t: 0.10, r: 0.20, b: 0.16 }),
+  item("y", "disso!", { l: 0.16, t: 0.13, r: 0.30, b: 0.20 }),
+  item("z", "Ao lado", { l: 0.29, t: 0.195, r: 0.40, b: 0.30 }), // balão colado: as caixas só se tocam
+]);
+assert.deepEqual(tortos.map((t) => t.texto), ["Nada disso!", "Ao lado"]);
 perto(sobreposicao({ l: 0, t: 0, r: 1, b: 1 }, { l: 0.5, t: 0.5, r: 1.5, b: 1.5 }), 0.25);
 assert.equal(sobreposicao({ l: 0, t: 0, r: 1, b: 1 }, { l: 2, t: 2, r: 3, b: 3 }), 0);
 assert.equal(textoContexto([]), "");
@@ -303,6 +310,9 @@ assert.doesNotMatch(pu, /one string per item/);
   const pixels = resposta((c) => c.map((v) => v * 0.7)); // pixels da imagem que o modelo reduziu para 70%
   assert.ok(notaTexto(img, { l: 100, t: 60, r: 260, b: 120 }) > 0.9 && notaTexto(img, { l: 300, t: 130, r: 420, b: 190 }) === 0);
   assert.equal(escolherQuadro(img, eixo, w, h).tipo, "eixo");
+  // escala abaixo de 0,6 seria o modelo ampliando a imagem (nenhum faz isso): mesmo encaixando por acaso, fica a pedida
+  const ampliada = escolherQuadro(img, resposta((c) => c.map((v) => v / 0.46)), w, h);
+  assert.ok(ampliada.tipo !== "escala" || ampliada.s >= 0.6, JSON.stringify(ampliada));
   for (const [nome, cs] of [["lado maior", maior], ["pixels reduzidos", pixels]]) {
     const q = escolherQuadro(img, cs, w, h);
     const caixas = cs.map((b) => aplicarQuadro(b, q, w, h));

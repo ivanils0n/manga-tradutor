@@ -181,11 +181,25 @@ if (!window.__mangaTradutor) {
 
     function receber(m) {
       if (m.tipo === "aviso") return aviso(m.msg, "info");
+      if (m.tipo === "dados") return void enviarDados(m.url);
       const p = pedidos.get(m.rid);
       if (!p) return;
-      if (m.tipo === "capturado") return mostrarCamada();
+      if (m.tipo === "capturado") {
+        // a página mexeu entre o pedido e o print: as caixas viriam deslocadas; descarta e pede de novo
+        const t = p.tela, mexeu = (a, b) => Math.abs(a - b) > 2;
+        p.torto = mexeu(scrollX, t.sx) || mexeu(scrollY, t.sy) || innerWidth !== t.w || innerHeight !== t.h
+          || p.midias.some(({ el, r }) => { const n = el.getBoundingClientRect(); return mexeu(n.top, r.top) || mexeu(n.left, r.left); });
+        return mostrarCamada();
+      }
+      if (p.torto && (m.tipo === "parcial" || m.tipo === "fim")) {
+        if (m.tipo !== "fim") return;
+        concluir(m.rid, false);
+        if (p.manual) aviso("A página mexeu na hora do print: traduza de novo", "info");
+        else agendarAuto(300); // tira outro print quando ela parar
+        return;
+      }
       if (m.tipo === "parcial" || m.tipo === "fim") {
-        desenhar(p, m.lista, m.tipo === "fim");
+        desenhar(p, p.tipo === "print" && p.faixas ? semCortados(p, m.lista, !p.manual) : m.lista, m.tipo === "fim");
         if (m.tipo === "fim") concluir(m.rid, true);
         else if (p.manual && m.total > 1) aviso(`Traduzindo… ${m.prontos}/${m.total}`);
         return;
@@ -224,7 +238,19 @@ if (!window.__mangaTradutor) {
         cob?.pend.delete(rid);
         if (ok && !p.manual) cob?.feito.push(p.faixa);
       }
-      if (ok && p.faixas) for (const f of p.faixas) feitoPrint.set(f.el, [...(feitoPrint.get(f.el) || []), [f.y0, f.y1]]);
+      if (ok && p.faixas) {
+        for (const f of p.faixas) {
+          let { y0, y1 } = f;
+          for (const c of p.cortes || []) { // fala cortada pela beira da tela: a parte dela fica por fazer
+            if (c.el !== f.el) continue;
+            // com folga: no próximo print ela não pode encostar na beirada (pareceria cortada de novo)
+            const folga = Math.max(12, 0.15 * (c.b - c.t));
+            if (c.baixo) y1 = Math.min(y1, (c.t - folga - c.r.top) / c.r.height);
+            if (c.cima) y0 = Math.max(y0, (c.b + folga - c.r.top) / c.r.height);
+          }
+          if (y1 - y0 > 0.001) feitoPrint.set(f.el, [...(feitoPrint.get(f.el) || []), [y0, y1]]);
+        }
+      }
       if (p.manual && --manual.pendentes === 0) {
         if (ok && !manual.achou) aviso("Nenhum texto encontrado", "info");
         else fecharAviso();
@@ -243,7 +269,29 @@ if (!window.__mangaTradutor) {
     function urlDe(el) {
       if (el.tagName !== "IMG") return "";
       const url = el.currentSrc || el.src;
-      return /^(https?|data):/.test(url) && !falhas.has(url) ? url : "";
+      return /^(https?|data|blob):/.test(url) && !falhas.has(url) ? url : "";
+    }
+    /** Imagem blob: (MangaDex e outros): o background não alcança o endereço; a página lê e manda os bytes. */
+    async function enviarDados(url) {
+      let dados = "", erro = "";
+      try {
+        const b = await (await fetch(url)).blob();
+        dados = await new Promise((ok, falha) => {
+          const f = new FileReader();
+          f.onload = () => ok(f.result);
+          f.onerror = () => falha(f.error);
+          f.readAsDataURL(b);
+        });
+      } catch {
+        try { // o site já liberou o endereço: copia o que a imagem mostra
+          const el = ancoras.get(url), c = document.createElement("canvas");
+          c.width = el.naturalWidth;
+          c.height = el.naturalHeight;
+          c.getContext("2d").drawImage(el, 0, 0);
+          dados = c.toDataURL("image/jpeg", 0.92);
+        } catch (e) { erro = "não consegui ler a imagem: " + (e?.message || e); }
+      }
+      try { porta?.postMessage({ tipo: "dados", url, dados, erro }); } catch { /* extensão atualizada */ }
     }
     function listarMidias() {
       const W = innerWidth, H = innerHeight;
@@ -267,6 +315,11 @@ if (!window.__mangaTradutor) {
     async function traduzirTela() {
       await montar();
       comecarManual();
+      // traduzir de novo o que está na tela: as traduções que já estavam nela saem (fica uma por fala)
+      for (const [k, reg] of [...baloes]) {
+        const c = retangulo(reg), x = c && (c.l + c.r) / 2, y = c && (c.t + c.b) / 2;
+        if (c && x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight) remover(k);
+      }
       const midias = listarMidias();
       const semUrl = [];
       for (const { el, r } of midias) {
@@ -586,15 +639,39 @@ if (!window.__mangaTradutor) {
       return reg;
     }
 
+    /** A caixa do balão: o texto original, os espaços livres e o formato do balão (onde a tradução pode ir). */
+    function caixaDoBalao(b) {
+      const pf = b.perfil, larga = pf ? Math.max(...pf.meia) : 0;
+      const u = uniao(uniao(b.area, b.alta || b.area), b.cobre);
+      return pf ? uniao(u, { l: pf.cx - larga, t: pf.t, r: pf.cx + larga, b: pf.b }) : u;
+    }
+
+    /**
+     * Print da tela: fala cortada na beirada da captura (o resto fora da tela ou na parte já feita). Ao rolar,
+     * ela fica para quando aparecer inteira (senão sai meia tradução fora do lugar e depois a outra metade);
+     * no pedido manual ela entra, mas a parte dela não conta como feita (o automático refaz inteira).
+     */
+    function semCortados(p, lista, filtrar) {
+      const { w: W, h: H } = p.tela, topo = p.area.y * H, base = (p.area.y + p.area.h) * H, tol = 4;
+      p.cortes = [];
+      return lista.filter((b) => {
+        const u = caixaDoBalao(b), t = u.t * H, fim = u.b * H, cx = ((u.l + u.r) / 2) * W, cy = (t + fim) / 2;
+        const m = p.midias.find(({ r }) => cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom);
+        if (!m || fim - t > 0.8 * H) return true; // fala maior que a tela: não adianta esperar
+        const emCima = t <= topo + tol && m.r.top < topo - tol, emBaixo = fim >= base - tol && m.r.bottom > base + tol;
+        if (!emCima && !emBaixo) return true;
+        // só adia o que continua fora da tela; o que encosta na parte já feita já foi traduzido antes
+        p.cortes.push({ el: m.el, r: m.r, t, b: fim, cima: emCima && topo <= tol, baixo: emBaixo && base >= H - tol });
+        return !filtrar;
+      });
+    }
+
     /** Posição relativa à âncora e à parte que cobre o texto original. Muda quando partes do mesmo balão se juntam. */
     function geometria(reg, b, p) {
       const geo = JSON.stringify([b.area, b.alta, b.cobre, b.perfil]);
       if (geo === reg.geo) return;
       reg.geo = geo;
-      // a caixa do balão: o texto original, os espaços livres e o formato do balão (onde a tradução pode ir)
-      const pf = b.perfil, larga = pf ? Math.max(...pf.meia) : 0;
-      let u = uniao(uniao(b.area, b.alta || b.area), b.cobre);
-      if (pf) u = uniao(u, { l: pf.cx - larga, t: pf.t, r: pf.cx + larga, b: pf.b });
+      const pf = b.perfil, u = caixaDoBalao(b);
       if (p.tipo === "imagem") reg.rel = u; // já vem normalizado na imagem
       else {
         const { w: W, h: H } = p.tela, A0 = reg.A0;
@@ -617,13 +694,22 @@ if (!window.__mangaTradutor) {
       reg.w = reg.h = 0; // força reposicionar e repintar
     }
 
-    /** Traduzir de novo o mesmo lugar (outro recorte, outro modo) troca o balão antigo em vez de empilhar. */
+    /**
+     * Traduzir de novo o mesmo texto (outro recorte, outro modo, outro print) troca o balão antigo em vez
+     * de empilhar. Compara onde estava o texto original, não o balão inteiro: duas falas no mesmo balão ficam.
+     */
+    const caixaTexto = (reg) => {
+      const r = retangulo(reg);
+      if (!r) return null;
+      const w = r.r - r.l, h = r.b - r.t;
+      return { l: r.l + reg.cob.l * w, t: r.t + reg.cob.t * h, r: r.l + reg.cob.r * w, b: r.t + reg.cob.b * h };
+    };
     function substituirSobrepostos(chave, reg) {
-      const novo = retangulo(reg);
+      const novo = caixaTexto(reg);
       if (!novo) return;
       for (const [k, outro] of baloes) {
         if (k === chave) continue;
-        const r = retangulo(outro);
+        const r = caixaTexto(outro);
         if (!r) continue;
         const w = Math.min(novo.r, r.r) - Math.max(novo.l, r.l), h = Math.min(novo.b, r.b) - Math.max(novo.t, r.t);
         const menor = Math.min((novo.r - novo.l) * (novo.b - novo.t), (r.r - r.l) * (r.b - r.t));
