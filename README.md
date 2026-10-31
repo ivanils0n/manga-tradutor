@@ -23,7 +23,7 @@ Cada push na `main` gera de novo só a parte que mudou.
 4. Na página do mangá:
    - **T** traduz o que está na tela; **R** recorta só uma parte (sempre pela IA com imagem, o modo caprichado); **O** mostra/oculta as traduções. Dá para trocar por qualquer tecla, combinação ou botão do mouse.
    - As traduções ficam na página até você tirar: **botão direito** no balão → remover (ou remover todos). Clique simples mostra o original. O menu também funciona pelo teclado (setas e Enter).
-   - Os balões são cobertos com a cor do próprio balão assim que aparecem, e a tradução entra por cima conforme chega. Texto escrito sobre o desenho ganha um fundo reconstruído. Se o balão for pequeno demais, a tradução ganha uma caixa um pouco maior para continuar legível.
+   - Os balões são cobertos com a cor do próprio balão assim que aparecem, e a tradução entra por cima conforme chega. Texto escrito sobre o desenho ganha um fundo reconstruído. Se o balão for pequeno demais, a tradução ganha um balão novo, um pouco maior, sempre dentro da tela.
 5. No ícone, **Neste site**:
    - **Traduzir ao rolar** traduz a tela e já adianta as páginas que o site carregou mais abaixo (quantas, nas configurações).
    - **Páginas em inglês**: o próprio PC lê o texto (Tesseract) e a IA só corrige e traduz, sem receber a imagem: mais rápido e cerca de metade do custo. Se a leitura sair ruim (letra borrada, desenhada), aquela página vai pela IA com imagem sozinha.
@@ -57,6 +57,7 @@ Se o navegador não deixar a extensão ler o texto no aparelho (modo inglês), e
 - O recorte sai da imagem original quando a área marcada é de imagens da página (mais nítido, sem print); canvas e o resto vão por print.
 - Cada tradução fica guardada no navegador pelo endereço da imagem e pelo conteúdo do arquivo, valendo para qualquer IA: voltar a uma página, recarregar, trocar de API ou o site mudar o endereço da imagem não gasta tokens de novo e aparece na hora. Passando de 20.000 pedaços, os mais antigos saem sozinhos.
 - **Glossário automático:** a IA anota nomes de personagens, lugares e golpes de cada obra, e eles passam a sair sempre iguais. Dá para ver e apagar nas configurações. As últimas falas também vão junto como contexto.
-- A IA devolve a caixa do texto e a tradução num JSON compacto. A extensão confere a caixa na própria imagem (corrige caixas tortas ou folgadas), mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão.
+- A IA devolve a caixa do texto e a tradução num JSON compacto. A extensão confere a caixa na própria imagem (corrige caixas tortas ou folgadas), mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão (o largo ou o alto, o que der a letra maior).
+- Os balões traduzidos ficam presos à página (rolam junto, sem atraso no celular) e são desenhados como imagem: o modo escuro forçado de alguns navegadores não muda a cor deles.
 - **Uso:** as configurações mostram chamadas, tokens e quanto o cache e a leitura no PC economizaram.
 - Tesseract (núcleo WebAssembly e modelo de inglês): licença Apache 2.0, em `extension/tesseract/`.

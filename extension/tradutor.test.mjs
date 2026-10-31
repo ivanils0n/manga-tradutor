@@ -5,6 +5,8 @@ import {
   preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel, faixasPorVaos,
 } from "./tradutor.js";
 import { chamar } from "./provedores.js";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const perto = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 
@@ -184,6 +186,10 @@ const meio = (rem.h >> 1) * rem.w * 4 + (rem.w >> 1) * 4;
 assert.ok(Math.abs(rem.data[meio] - 127) < 20 && Math.abs(rem.data[meio] - rem.data[meio + 1]) < 4, "meio do remendo é cinza, sem vermelho");
 const esqR = (rem.h >> 1) * rem.w * 4;
 assert.ok(rem.data[esqR] < rem.data[meio], "degradê mantido");
+// em volta é textura (listras finas): não reconstrói (viraria listras), fica a caixa lisa
+const tex = new Uint8ClampedArray(GW * GH * 4);
+for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { const v = (x >> 1) % 2 ? 230 : 20; tex.set([v, v, v, 255], (y * GW + x) * 4); }
+assert.equal(preencherBordas({ data: tex, width: GW, height: GH }, { l: 76, t: 36, r: 124, b: 64 }), null);
 
 // ---- modo inglês: TSV do Tesseract → linhas → balões
 const tsv = [
@@ -213,6 +219,12 @@ const partida = linhasDoTsv([
   "5\t1\t3\t1\t1\t1\t475\t427\t210\t15\t95\tI'M NOT GOING BACK!",
 ].join("\n"));
 assert.deepEqual(agruparLinhas(partida).map((g) => g.texto), ["I TOLD YOU ALREADY! I'M NOT GOING BACK!"]);
+// rabisco do desenho lido como letra some; "Ah..." bem lido fica
+const curtos = agruparLinhas(linhasDoTsv([
+  "5\t1\t1\t1\t1\t1\t100\t100\t20\t20\t70\tHt", "5\t1\t2\t1\t1\t1\t400\t100\t12\t20\t95\tG",
+  "5\t1\t3\t1\t1\t1\t100\t400\t30\t20\t96\tAh...",
+].join("\n")));
+assert.deepEqual(curtos.map((g) => g.texto), ["Ah..."]);
 
 // ---- modo inglês: prompt, itens, resposta e streaming
 const pt = montarPromptTexto({ idioma: "pt-BR", honorificos: false, onomatopeias: false, glossario: "Bob = Beto", glossarioAuto: [["Bob", "Roberto"], ["Ann", "Ana"]], aprender: true });
@@ -251,5 +263,43 @@ assert.doesNotMatch(pu, /one string per item/);
   assert.deepEqual(faixasPorVaos(img), [[0, 410], [410, 806], [806, 1200]]);
   assert.deepEqual(faixasPorVaos(img, 500), [[0, 1200]]); // nenhum vão deixa as duas partes com 500 px
   assert.deepEqual(faixasPorVaos({ ...img, height: 700, data: img.data.subarray(0, w * 700 * 4) }), [[0, 700]]); // baixa demais para dividir
+}
+// ---- balão redondo: além do espaço largo, um espaço alto (cabe a tradução em mais linhas, com letra maior)
+{
+  const W2 = 400, H2 = 400, d2 = new Uint8ClampedArray(W2 * H2 * 4);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const e = ((x - 200) / 150) ** 2 + ((y - 200) / 150) ** 2;
+    d2.set([...(e < 0.95 ? [255, 255, 255] : e < 1.05 ? [0, 0, 0] : [90, 90, 120]), 255], (y * W2 + x) * 4);
+  }
+  for (let y = 185; y < 215; y++) for (let x = 150; x < 250; x++) if ((x >> 2) % 2) d2.set([0, 0, 0, 255], (y * W2 + x) * 4); // "texto"
+  const a = analisarBalao({ data: d2, width: W2, height: H2 }, { l: 150, t: 185, r: 250, b: 215 });
+  assert.ok(a.uniforme && a.alta);
+  assert.ok(a.alta.b - a.alta.t > (a.area.b - a.area.t) * 1.5, "o espaço alto é bem mais alto que o largo");
+  for (const q of [a.area, a.alta]) for (const [x, y] of [[q.l, q.t], [q.r, q.t], [q.l, q.b], [q.r, q.b]]) {
+    assert.ok(((x - 200) / 150) ** 2 + ((y - 200) / 150) ** 2 < 1.05, "os cantos ficam dentro do balão");
+  }
+}
+
+// ---- desenho dos balões (desenho.js, script comum da página): quebra, encaixe e balão novo
+{
+  vm.runInThisContext(readFileSync(new URL("./desenho.js", import.meta.url), "utf8"));
+  const { quebrarLinhas, encaixarTexto, caixaExpandida } = globalThis;
+  const medirCom = (s) => (t) => t.length * s * 0.55; // letra "monoespaçada" de mentira
+  assert.deepEqual(quebrarLinhas(["um", "dois", "tres"], 33, medirCom(10)), ["um", "dois", "tres"]);
+  assert.deepEqual(quebrarLinhas(["paralelepipedo"], 33, medirCom(10)), ["paral-", "elepi-", "pedo"]);
+  const frase = "Ei! Para onde você pensa que vai com tanta pressa assim?";
+  const e = encaixarTexto(frase, 160, 120, 11, 30, 1.1, medirCom);
+  assert.ok(e && e.tamanho >= 11 && e.tamanho <= 30);
+  assert.equal(e.linhas.join(" "), frase); // nenhuma palavra perdida
+  assert.ok(e.linhas.every((l) => l.length * e.tamanho * 0.55 <= 160 - e.tamanho + 0.5), "cabe na largura");
+  assert.ok(e.linhas.length * e.tamanho * 1.1 <= 120 - 0.6 * e.tamanho + 0.5, "cabe na altura");
+  // linhas equilibradas: sem uma palavra sozinha na última linha quando dá para distribuir
+  assert.deepEqual(globalThis.equilibrar(["aaa", "bbb", "ccc", "ddd", "eee"], ["aaa bbb ccc ddd", "eee"], 82.5, medirCom(10)), ["aaa bbb ccc", "ddd eee"]);
+  assert.equal(encaixarTexto(frase, 60, 30, 13, 30, 1.1, medirCom), null); // balão pequeno demais
+  const x = caixaExpandida(frase, 60, 30, 13, 1.1, medirCom, 300);
+  assert.ok(x.w >= 9 * 13 && x.w <= 300 && x.h >= 30 && x.h <= x.w * 1.2 + 1, "balão novo: largo, sem passar da tela");
+  assert.equal(x.linhas.join(" "), frase);
+  assert.ok(x.linhas.every((l) => l.length * 13 * 0.55 <= x.w - 1.2 * 13 + 0.5));
+  assert.ok(caixaExpandida(frase.repeat(6), 60, 30, 13, 1.1, medirCom, 200).w <= 200, "nunca mais largo que a tela");
 }
 console.log("ok");

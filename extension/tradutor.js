@@ -367,13 +367,25 @@ export function analisarBalao(img, c) {
   for (let k = 0; k < maxX && area.r < W - 2 && linhaLisa(area.r + 2, m0, area.r + 2, m1); k += 2) area.r += 2;
   for (let k = 0; k < maxY && area.t > 1 && linhaLisa(area.l, area.t - 2, area.r, area.t - 2); k += 2) area.t -= 2;
   for (let k = 0; k < maxY && area.b < H - 2 && linhaLisa(area.l, area.b + 2, area.r, area.b + 2); k += 2) area.b += 2;
-  return { fundo: hex(fundo), claro: lumi(fundo) > 140, uniforme: true, cobre, area };
+  // e o espaço "alto": primeiro para cima e para baixo pela coluna do meio, depois para os lados. Num balão
+  // redondo, cabe uma tradução de mais linhas com letra maior; quem desenha escolhe o que der a letra maior
+  const alta = { ...cobre };
+  if (claro) {
+    const maxV = Math.max(th * 1.2, tw * 0.6) + 24;
+    const c0 = alta.l + (alta.r - alta.l) * 0.25, c1 = alta.r - (alta.r - alta.l) * 0.25;
+    for (let k = 0; k < maxV && alta.t > 1 && linhaLisa(c0, alta.t - 2, c1, alta.t - 2); k += 2) alta.t -= 2;
+    for (let k = 0; k < maxV && alta.b < H - 2 && linhaLisa(c0, alta.b + 2, c1, alta.b + 2); k += 2) alta.b += 2;
+    for (let k = 0; k < maxX && alta.l > 1 && linhaLisa(alta.l - 2, alta.t, alta.l - 2, alta.b); k += 2) alta.l -= 2;
+    for (let k = 0; k < maxX && alta.r < W - 2 && linhaLisa(alta.r + 2, alta.t, alta.r + 2, alta.b); k += 2) alta.r += 2;
+  }
+  return { fundo: hex(fundo), claro: lumi(fundo) > 140, uniforme: true, cobre, area, alta };
 }
 
 /**
  * Reconstrói o fundo atrás de um texto escrito sobre o desenho: cada ponto da caixa vira a média das
  * bordas (esquerda, direita, cima, baixo), pesada pela distância. Resolve cor lisa e degradê; textura
- * fica suavizada. Devolve uma imagem pequena (até `maxLado` px) que a página estica por cima do texto.
+ * fica suavizada. Devolve uma imagem pequena (até `maxLado` px) que a página estica por cima do texto,
+ * ou null quando em volta é textura (aí vai uma caixa lisa).
  */
 export function preencherBordas(img, c, maxLado = 128) {
   const { data, width: W, height: H } = img;
@@ -393,6 +405,9 @@ export function preencherBordas(img, c, maxLado = 128) {
   const ys = Array.from({ length: h }, (_, j) => c.t + ((j + 0.5) / h) * bh);
   const cima = xs.map((x) => media(x, c.t - fora)), baixo = xs.map((x) => media(x, c.b + fora));
   const esq = ys.map((y) => media(c.l - fora, y)), dir = ys.map((y) => media(c.r + fora, y));
+  // em volta é textura (desenho cheio de detalhe): a média das bordas vira listras. Melhor uma caixa lisa
+  const aspereza = (v) => v.slice(1).reduce((s, p, i) => s + Math.abs(p[0] - v[i][0]) + Math.abs(p[1] - v[i][1]) + Math.abs(p[2] - v[i][2]), 0) / (3 * Math.max(1, v.length - 1));
+  if ((aspereza(cima) + aspereza(baixo) + aspereza(esq) + aspereza(dir)) / 4 > 10) return null;
   const out = new Uint8ClampedArray(w * h * 4);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
@@ -482,6 +497,9 @@ export function agruparLinhas(linhas) {
       conf: palavras.reduce((a, p) => a + p.conf, 0) / palavras.length,
       palavras,
     };
+  }).filter((g) => { // rabisco do desenho lido como letra ("i", "G", "Ht") virava um balão de lixo
+    const n = letras(g.texto);
+    return n > 2 || (n === 2 && g.conf >= 90);
   });
 }
 
@@ -517,10 +535,11 @@ export function mesclar(itens) {
   const saida = [];
   for (const it of itens) {
     const alvo = saida.find((o) => sobreposicao(o.area, it.area) > 0.3);
-    if (!alvo) { saida.push({ ...it, cobre: { ...it.cobre }, area: { ...it.area } }); continue; }
+    if (!alvo) { saida.push({ ...it, cobre: { ...it.cobre }, area: { ...it.area }, ...(it.alta && { alta: { ...it.alta } }) }); continue; }
     alvo.texto = [alvo.texto, it.texto].filter(Boolean).join(" ");
     alvo.uniforme = alvo.uniforme && it.uniforme;
-    for (const k of ["cobre", "area"]) {
+    for (const k of ["cobre", "area", "alta"]) {
+      if (!alvo[k] || !it[k]) continue;
       alvo[k] = {
         l: Math.min(alvo[k].l, it[k].l), t: Math.min(alvo[k].t, it[k].t),
         r: Math.max(alvo[k].r, it[k].r), b: Math.max(alvo[k].b, it[k].b),

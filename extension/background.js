@@ -33,7 +33,7 @@ async function dispararNaAba(tabId, acao) {
   try {
     await chrome.tabs.sendMessage(tabId, msg);
   } catch {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["atalhos.js", "content.js"] }).catch(() => {});
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["atalhos.js", "desenho.js", "content.js"] }).catch(() => {});
     chrome.tabs.sendMessage(tabId, msg).catch(() => {});
   }
 }
@@ -448,6 +448,7 @@ async function comRemendos(itens, pixels, paraPx) {
   return Promise.all(itens.map(async (it) => {
     if (it.uniforme || !it.texto) return it;
     const rem = preencherBordas(pixels, paraPx(it.cobre), 96);
+    if (!rem) return it;
     const c = new OffscreenCanvas(rem.w, rem.h);
     c.getContext("2d").putImageData(new ImageData(rem.data, rem.w, rem.h), 0, 0);
     return { ...it, remendo: await paraDataUrl(await c.convertToBlob({ type: "image/jpeg", quality: 0.85 })) };
@@ -537,6 +538,7 @@ async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
     return [{
       chave: `i|${idUrl}|${q.i}|${e.id}`, texto: e.texto,
       fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: norm(e.a.cobre), area: norm(e.a.area),
+      ...(e.a.alta && { alta: norm(e.a.alta) }),
     }];
   }));
   const entradas = await lerPedaco(est, cfg, r, { prioridade: m.prioridade, obra, dono, aoParcial: (es) => aoParcial(paraItens(es)) });
@@ -650,6 +652,7 @@ async function traduzirPrint(est, m) {
       return [{
         chave: `p|${m.rid}|${qx + Math.round(e.px.l)},${qy + Math.round(e.px.t)}`, texto: e.texto,
         fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: tela(e.a.cobre), area: tela(e.a.area),
+        ...(e.a.alta && { alta: tela(e.a.alta) }),
       }];
     }));
     // o cache do print guarda as falas (caixa no pedaço + texto); a análise do balão é refeita na hora

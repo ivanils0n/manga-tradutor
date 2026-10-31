@@ -36,7 +36,9 @@ if (!window.__mangaTradutor) {
     function montar() {
       return (montando ??= (async () => {
         camada = document.createElement("mt-tradutor");
-        camada.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;display:block";
+        // presa ao começo da página, não à tela: os balões rolam junto com ela (sem atraso no celular) e não
+        // dependem de como cada navegador posiciona "fixed" com a barra de endereço aparecendo e sumindo
+        camada.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;display:block";
         raiz = camada.attachShadow({ mode: "closed" });
         raiz.addEventListener("pointerdown", (e) => { if (menu && !menu.contains(e.target)) fecharMenu(); });
         lugarDaCamada().appendChild(camada);
@@ -64,6 +66,7 @@ if (!window.__mangaTradutor) {
       try { // no documento (não no shadow DOM): só assim a fonte vale dentro dos balões
         const fonte = new FontFace("MT Quadrinhos", await (await arquivo("fontes/comic-neue-bold.woff")).arrayBuffer(), { weight: "100 900" });
         document.fonts.add(await fonte.load());
+        redesenharTudo(); // balões que chegaram antes da fonte
       } catch { /* fica a fonte do sistema */ }
     }
     // em tela cheia só aparece o que está dentro do elemento em tela cheia
@@ -75,9 +78,8 @@ if (!window.__mangaTradutor) {
 
     function aplicarPref() {
       if (!camada) return;
-      camada.setAttribute("data-fonte", pref.fonte);
-      camada.toggleAttribute("data-maiusculas", !!pref.maiusculas);
       posicionarBotao();
+      redesenharTudo(); // fonte, maiúsculas
     }
     function mostrarCamada() {
       clearTimeout(reexibir);
@@ -513,7 +515,7 @@ if (!window.__mangaTradutor) {
         if (!reg && !(reg = criarBalao(b, p))) continue;
         reg.rid = p.rid;
         geometria(reg, b, p);
-        if (b.remendo && b.remendo !== reg.remendo) desenharRemendo(reg, b.remendo);
+        if (b.remendo && b.remendo !== reg.remendoUrl) desenharRemendo(reg, b.remendo);
         if (b.texto && b.texto !== reg.texto) {
           reg.texto = b.texto;
           reg.txt.textContent = b.texto;
@@ -542,12 +544,14 @@ if (!window.__mangaTradutor) {
       }
       const el = document.createElement("div");
       el.className = "balao vazio";
-      const cobre = document.createElement("div");
+      const tela = document.createElement("canvas"); // o balão traduzido é pintado aqui (ver desenho.js)
+      tela.className = "pintura";
+      const cobre = document.createElement("div"); // retícula andando enquanto a tradução não chega
       cobre.className = "cobre";
-      const txt = document.createElement("div");
+      const txt = document.createElement("div"); // o texto em si, invisível: para leitores de tela
       txt.className = "txt";
       txt.lang = pref.idioma || "pt-BR";
-      el.append(cobre, txt);
+      el.append(tela, cobre, txt);
       el.title = toque ? "" : "Clique: ver o original · botão direito: mais opções";
       const k = b.chave;
       let segurou = 0, timer = 0, ini = null;
@@ -576,7 +580,7 @@ if (!window.__mangaTradutor) {
       for (const t of ["pointerup", "pointercancel"]) el.addEventListener(t, () => clearTimeout(timer));
       raiz.appendChild(el);
       const reg = {
-        el, cobre, txt, texto: "", ajustar: false, w: 0, h: 0, ancora, A0, sx: p.tela?.sx, sy: p.tela?.sy, geo: "",
+        el, tela, cobre, txt, texto: "", ajustar: false, w: 0, h: 0, ancora, A0, sx: p.tela?.sx, sy: p.tela?.sy, geo: "",
         url: p.url, conteudo: p.tipo === "imagem", // pedido pela imagem: coordenadas no desenho da imagem
       };
       baloes.set(b.chave, reg);
@@ -587,10 +591,10 @@ if (!window.__mangaTradutor) {
 
     /** Posição relativa à âncora e à parte que cobre o texto original. Muda quando partes do mesmo balão se juntam. */
     function geometria(reg, b, p) {
-      const geo = JSON.stringify([b.area, b.cobre]);
+      const geo = JSON.stringify([b.area, b.alta, b.cobre]);
       if (geo === reg.geo) return;
       reg.geo = geo;
-      const u = uniao(b.area, b.cobre);
+      const u = uniao(uniao(b.area, b.alta || b.area), b.cobre);
       if (p.tipo === "imagem") reg.rel = u; // já vem normalizado na imagem
       else {
         const { w: W, h: H } = p.tela, A0 = reg.A0;
@@ -600,14 +604,15 @@ if (!window.__mangaTradutor) {
         };
       }
       const w = u.r - u.l, h = u.b - u.t;
+      const rel = (q) => ({ l: (q.l - u.l) / w, t: (q.t - u.t) / h, r: (q.r - u.l) / w, b: (q.b - u.t) / h });
+      reg.cob = rel(b.cobre); // onde estava o texto original, em fração da caixa do balão
+      reg.areas = [rel(b.area), ...(b.alta ? [rel(b.alta)] : [])]; // onde a tradução pode ir (largo e alto)
       Object.assign(reg.cobre.style, {
-        left: ((b.cobre.l - u.l) / w) * 100 + "%", top: ((b.cobre.t - u.t) / h) * 100 + "%",
-        width: ((b.cobre.r - b.cobre.l) / w) * 100 + "%", height: ((b.cobre.b - b.cobre.t) / h) * 100 + "%",
+        left: reg.cob.l * 100 + "%", top: reg.cob.t * 100 + "%",
+        width: (reg.cob.r - reg.cob.l) * 100 + "%", height: (reg.cob.b - reg.cob.t) * 100 + "%",
       });
-      reg.el.classList.toggle("sobre-arte", !b.uniforme);
-      reg.el.classList.toggle("escuro", !b.claro);
-      reg.el.style.setProperty("--fundo", b.fundo);
-      reg.w = reg.h = 0; // força reposicionar e reajustar a letra
+      Object.assign(reg, { fundo: b.fundo, claro: b.claro, uniforme: b.uniforme });
+      reg.w = reg.h = 0; // força reposicionar e repintar
     }
 
     /** Traduzir de novo o mesmo lugar (outro recorte, outro modo) troca o balão antigo em vez de empilhar. */
@@ -660,19 +665,16 @@ if (!window.__mangaTradutor) {
     }
 
     /**
-     * Fundo reconstruído atrás de texto escrito sobre o desenho. Vai num <canvas> (decodificado aqui),
-     * não como imagem: a política de segurança de alguns sites bloqueia imagens "data:".
+     * Fundo reconstruído atrás de texto escrito sobre o desenho. Decodificado aqui e pintado no canvas
+     * do balão, não como imagem: a política de segurança de alguns sites bloqueia imagens "data:".
      */
     async function desenharRemendo(reg, url) {
-      reg.remendo = url;
+      reg.remendoUrl = url;
       try {
         const bytes = Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0));
-        const img = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
-        const cv = reg.cobre.querySelector("canvas") || reg.cobre.appendChild(document.createElement("canvas"));
-        cv.width = img.width;
-        cv.height = img.height;
-        cv.getContext("2d").drawImage(img, 0, 0);
-        reg.el.classList.add("com-remendo");
+        reg.remendo = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+        reg.ajustar = true;
+        redesenharTudo();
       } catch { /* fica a cor lisa */ }
     }
 
@@ -685,7 +687,9 @@ if (!window.__mangaTradutor) {
     const contar = () => camada?.setAttribute("data-baloes", [...baloes.values()].filter((r) => r.texto).length);
 
     function posicionar() {
+      if (!camada) return;
       const W = innerWidth, H = innerHeight;
+      const origem = camada.getBoundingClientRect(); // onde está o começo da camada (rola com a página)
       const rects = new Map(); // a mesma imagem tem vários balões: mede uma vez só
       for (const [k, reg] of baloes) {
         const chaveRect = reg.ancora && (reg.conteudo ? "c" : "b");
@@ -700,53 +704,51 @@ if (!window.__mangaTradutor) {
           if (reg.ancora) rects.set(reg.ancora, { ...rects.get(reg.ancora), [chaveRect]: r });
         }
         const c = retangulo(reg, r);
-        const fora = !c || c.t > H || c.b < 0 || c.l > W || c.r < 0;
+        // fora da tela (com folga de uma tela, para não "pipocar" ao rolar rápido): nem desenha
+        const fora = !c || c.t > 2 * H || c.b < -H || c.l > W || c.r < 0;
         reg.el.style.display = fora ? "none" : "";
         if (fora) continue;
         const w = c.r - c.l, h = c.b - c.t;
-        reg.el.style.transform = `translate(${c.l}px,${c.t}px)`;
+        reg.el.style.transform = `translate(${c.l - origem.left}px,${c.t - origem.top}px)`;
         if (Math.abs(w - reg.w) > 0.5 || Math.abs(h - reg.h) > 0.5) {
           reg.el.style.width = w + "px";
           reg.el.style.height = h + "px";
           reg.w = w; reg.h = h; reg.ajustar = true;
         }
-        if (reg.ajustar && reg.texto) {
+        if (Math.abs(c.l - (reg.x ?? c.l)) > 1) reg.ajustar = true; // andou para o lado: a tradução tem de seguir dentro da tela
+        if (reg.ajustar) {
           reg.ajustar = false;
-          ajustarFonte(reg);
+          reg.x = c.l;
+          pintar(reg);
         }
       }
     }
 
-    /**
-     * Maior letra que cabe no balão (busca binária), nunca menor que 13 px: se não couber assim, a
-     * tradução ganha uma caixa um pouco maior que o balão, mas continua legível.
-     */
-    const MINIMO = 13;
-    function ajustarFonte(reg) {
-      const t = reg.txt;
-      reg.el.classList.remove("expandido");
-      const cabe = () => t.scrollHeight <= t.clientHeight + 1 && t.scrollWidth <= t.clientWidth + 1;
-      let lo = MINIMO, hi = Math.max(MINIMO, Math.min(30, reg.h * 0.42));
-      t.style.fontSize = hi + "px";
-      if (cabe()) return;
-      t.style.fontSize = lo + "px";
-      if (!cabe()) {
-        reg.el.classList.add("expandido");
-        return;
-      }
-      while (hi - lo > 0.5) {
-        const meio = (lo + hi) / 2;
-        t.style.fontSize = meio + "px";
-        if (cabe()) lo = meio; else hi = meio;
-      }
-      t.style.fontSize = lo + "px";
+    // letra mínima: no celular a tela é pequena e o canvas sai nítido mesmo com letra menor
+    const MINIMO = toque ? 11 : 13;
+    const emPx = (q, reg) => ({ l: q.l * reg.w, t: q.t * reg.h, r: q.r * reg.w, b: q.b * reg.h });
+    function pintar(reg) {
+      pintarBalao(reg.tela, {
+        w: reg.w, h: reg.h, fundo: reg.fundo, claro: reg.claro, uniforme: reg.uniforme, remendo: reg.remendo, texto: reg.texto,
+        cobre: emPx(reg.cob, reg), areas: reg.areas.map((a) => emPx(a, reg)),
+        fonte: pref.fonte, maiusculas: !!pref.maiusculas, idioma: pref.idioma || "pt-BR", minimo: MINIMO,
+        x: reg.x, largTela: document.documentElement.clientWidth || innerWidth, escala: Math.min(3, (devicePixelRatio || 1) * (visualViewport?.scale || 1)),
+      });
     }
 
     let pedidoQuadro = 0;
-    const agendarPosicao = () => {
-      fecharMenu();
+    const quadroPosicao = () => {
       if (baloes.size && !pedidoQuadro) pedidoQuadro = requestAnimationFrame(() => { pedidoQuadro = 0; posicionar(); });
     };
+    const agendarPosicao = () => { fecharMenu(); quadroPosicao(); };
+    /** Pinta tudo de novo (fonte carregou, preferência mudou, zoom): sem fechar o menu aberto. */
+    function redesenharTudo() {
+      for (const reg of baloes.values()) reg.ajustar = true;
+      quadroPosicao();
+    }
+    // zoom com dois dedos: pinta de novo na resolução nova (senão a letra fica borrada)
+    let timerZoom = 0;
+    visualViewport?.addEventListener("resize", () => { clearTimeout(timerZoom); timerZoom = setTimeout(redesenharTudo, 200); });
 
     // ---------- menu (botão direito no balão, ou segurar o botão PT) ----------
     let menu = null;
