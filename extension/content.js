@@ -5,13 +5,12 @@ if (!window.__mangaTradutor) {
   window.__mangaTradutor = true;
   (() => {
     const site = location.hostname;
-    const CHAVES_PREF = ["fonte", "maiusculas", "idioma", "auto", "adiantar", "ingles", "semTeclaUnica", "semBotao", "botao"];
+    const CHAVES_PREF = ["fonte", "maiusculas", "idioma", "auto", "adiantar", "ingles", "semTeclaUnica"];
     let atalhos = { ...ATALHOS_PADRAO };
     let pref = {
       fonte: "quadrinhos", maiusculas: false, idioma: "pt-BR", auto: {}, adiantar: "todas", ingles: {}, semTeclaUnica: {},
-      semBotao: {}, botao: null,
     };
-    const toque = matchMedia("(hover: none) and (pointer: coarse)").matches; // celular/tablet: sem teclado, com o botão PT
+    const toque = matchMedia("(hover: none) and (pointer: coarse)").matches; // celular/tablet: sem mouse
     const ocrLigado = () => !!pref.ingles?.[site]; // site em inglês: o PC lê o texto (Tesseract), a IA só traduz
     let autoPausado = false;
     const autoLigado = () => !!pref.auto?.[site] && !autoPausado;
@@ -21,12 +20,12 @@ if (!window.__mangaTradutor) {
       pref = { ...pref, ...(await chrome.storage.local.get(CHAVES_PREF)) };
       aplicarPref();
     }
-    carregar().then(() => { agendarAuto(600); verBotao(); }, () => {});
+    carregar().then(() => agendarAuto(600), () => {});
     chrome.storage.onChanged.addListener((c, onde) => {
       if (onde !== "local" || !["atalhos", ...CHAVES_PREF].some((k) => k in c)) return;
       const ligou = c.auto && !c.auto.oldValue?.[site] && c.auto.newValue?.[site];
       if (ligou) autoPausado = false;
-      carregar().then(() => { if (ligou) agendarAuto(0); verBotao(); }, () => {});
+      carregar().then(() => ligou && agendarAuto(0), () => {});
     });
 
     // ---------- camada (shadow DOM) ----------
@@ -78,14 +77,13 @@ if (!window.__mangaTradutor) {
 
     function aplicarPref() {
       if (!camada) return;
-      posicionarBotao();
       redesenharTudo(); // fonte, maiúsculas
     }
     function mostrarCamada() {
       clearTimeout(reexibir);
       if (camada) camada.style.visibility = "";
     }
-    function alternar() { // só os balões: o botão PT continua na tela para mostrar de novo
+    function alternar() { // só os balões (avisos continuam aparecendo)
       if (!camada) return;
       oculto = !oculto;
       camada.toggleAttribute("data-oculto", oculto);
@@ -397,10 +395,10 @@ if (!window.__mangaTradutor) {
       if (faixas.length) pedirPrint({ x: x0 / innerWidth, y: y0 / H, w: (x1 - x0) / innerWidth, h: (y1 - y0) / H }, false, faixas);
     }
     addEventListener("scroll", () => { agendarPosicao(); agendarAuto(); }, { capture: true, passive: true });
-    addEventListener("resize", () => { agendarPosicao(); agendarAuto(); posicionarBotao(); });
-    document.addEventListener("load", (e) => { if (e.target.tagName === "IMG") agendarAuto(300), verBotao(); }, true);
+    addEventListener("resize", () => { agendarPosicao(); agendarAuto(); });
+    document.addEventListener("load", (e) => { if (e.target.tagName === "IMG") agendarAuto(300); }, true);
     document.addEventListener("visibilitychange", () => agendarAuto(300));
-    new MutationObserver(() => { agendarAuto(500); verBotao(); }).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(() => agendarAuto(500)).observe(document.documentElement, { childList: true, subtree: true });
 
     // leitores que trocam de capítulo sem recarregar: balões presos às imagens somem com elas sozinhos
     let endereco = location.href;
@@ -483,7 +481,6 @@ if (!window.__mangaTradutor) {
 
     /** Selo discreto no canto enquanto o modo automático traduz adiante. */
     function atualizarStatus() {
-      botao?.classList.toggle("ocupado", manual.pendentes > 0);
       if (!raiz) return;
       const n = [...pedidos.values()].filter((p) => !p.manual).length;
       let s = raiz.querySelector(".fila");
@@ -591,10 +588,13 @@ if (!window.__mangaTradutor) {
 
     /** Posição relativa à âncora e à parte que cobre o texto original. Muda quando partes do mesmo balão se juntam. */
     function geometria(reg, b, p) {
-      const geo = JSON.stringify([b.area, b.alta, b.cobre]);
+      const geo = JSON.stringify([b.area, b.alta, b.cobre, b.perfil]);
       if (geo === reg.geo) return;
       reg.geo = geo;
-      const u = uniao(uniao(b.area, b.alta || b.area), b.cobre);
+      // a caixa do balão: o texto original, os espaços livres e o formato do balão (onde a tradução pode ir)
+      const pf = b.perfil, larga = pf ? Math.max(...pf.meia) : 0;
+      let u = uniao(uniao(b.area, b.alta || b.area), b.cobre);
+      if (pf) u = uniao(u, { l: pf.cx - larga, t: pf.t, r: pf.cx + larga, b: pf.b });
       if (p.tipo === "imagem") reg.rel = u; // já vem normalizado na imagem
       else {
         const { w: W, h: H } = p.tela, A0 = reg.A0;
@@ -607,6 +607,8 @@ if (!window.__mangaTradutor) {
       const rel = (q) => ({ l: (q.l - u.l) / w, t: (q.t - u.t) / h, r: (q.r - u.l) / w, b: (q.b - u.t) / h });
       reg.cob = rel(b.cobre); // onde estava o texto original, em fração da caixa do balão
       reg.areas = [rel(b.area), ...(b.alta ? [rel(b.alta)] : [])]; // onde a tradução pode ir (largo e alto)
+      reg.perfil = pf && { cx: (pf.cx - u.l) / w, t: (pf.t - u.t) / h, b: (pf.b - u.t) / h, meia: pf.meia.map((m) => m / w) };
+      reg.letra = b.letra ? b.letra / h : 0; // tamanho da letra original, em fração da altura da caixa
       Object.assign(reg.cobre.style, {
         left: reg.cob.l * 100 + "%", top: reg.cob.t * 100 + "%",
         width: (reg.cob.r - reg.cob.l) * 100 + "%", height: (reg.cob.b - reg.cob.t) * 100 + "%",
@@ -730,7 +732,8 @@ if (!window.__mangaTradutor) {
     function pintar(reg) {
       pintarBalao(reg.tela, {
         w: reg.w, h: reg.h, fundo: reg.fundo, claro: reg.claro, uniforme: reg.uniforme, remendo: reg.remendo, texto: reg.texto,
-        cobre: emPx(reg.cob, reg), areas: reg.areas.map((a) => emPx(a, reg)),
+        cobre: emPx(reg.cob, reg), areas: reg.areas.map((a) => emPx(a, reg)), letra: reg.letra * reg.h,
+        perfil: reg.perfil && { cx: reg.perfil.cx * reg.w, t: reg.perfil.t * reg.h, b: reg.perfil.b * reg.h, meia: reg.perfil.meia.map((m) => m * reg.w) },
         fonte: pref.fonte, maiusculas: !!pref.maiusculas, idioma: pref.idioma || "pt-BR", minimo: MINIMO,
         x: reg.x, largTela: document.documentElement.clientWidth || innerWidth, escala: Math.min(3, (devicePixelRatio || 1) * (visualViewport?.scale || 1)),
       });
@@ -750,9 +753,9 @@ if (!window.__mangaTradutor) {
     let timerZoom = 0;
     visualViewport?.addEventListener("resize", () => { clearTimeout(timerZoom); timerZoom = setTimeout(redesenharTudo, 200); });
 
-    // ---------- menu (botão direito no balão, ou segurar o botão PT) ----------
+    // ---------- menu do balão (botão direito, ou segurar o dedo) ----------
     let menu = null;
-    /** onde: o ponto do clique ({x, y}) ou o retângulo de um botão (o menu abre acima dele). itens: [[texto, ação]]. */
+    /** onde: o ponto do clique ({x, y}). itens: [[texto, ação]]. */
     function abrirMenu(onde, itens) {
       fecharMenu();
       menu = document.createElement("div");
@@ -767,12 +770,7 @@ if (!window.__mangaTradutor) {
       }
       raiz.appendChild(menu);
       const r = menu.getBoundingClientRect();
-      let { x, y } = onde;
-      if (onde.width) { // ao lado do botão: acima dele, ou abaixo se não couber
-        x = onde.right - r.width;
-        y = onde.top - r.height - 10;
-        if (y < 8) y = onde.bottom + 10;
-      }
+      const { x, y } = onde;
       menu.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + "px";
       menu.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
       menu.querySelector("button").focus();
@@ -790,82 +788,6 @@ if (!window.__mangaTradutor) {
     function fecharMenu() {
       menu?.remove();
       menu = null;
-    }
-
-    // ---------- celular: botão PT na tela (toque traduz, segure para o menu, arraste para mover) ----------
-    let botao = null, timerBotao = 0;
-    function verBotao() {
-      if (!toque) return;
-      clearTimeout(timerBotao);
-      timerBotao = setTimeout(() => {
-        if (pref.semBotao?.[site]) return mostrarBotao(false);
-        // só aparece em página que parece leitor de mangá, não em todo site. O tamanho do arquivo é
-        // conferido antes do da tela: medir a tela força o navegador a recalcular a página (pesa no celular)
-        const grande = (el) => (el.naturalWidth ?? el.width) >= 300 && (el.naturalHeight ?? el.height) >= 300;
-        if (!botao && [...document.querySelectorAll("img, canvas")].some((el) => grande(el) && pareceManga(el, el.getBoundingClientRect()))) mostrarBotao(true);
-      }, 400);
-    }
-    async function mostrarBotao(sim) {
-      if (!sim) return botao?.remove(), (botao = null);
-      await montar();
-      if (botao) return;
-      botao = document.createElement("button");
-      botao.className = "pt";
-      botao.textContent = "PT";
-      botao.setAttribute("aria-label", "Traduzir a tela (segure para mais opções)");
-      raiz.appendChild(botao);
-      posicionarBotao();
-      atualizarStatus();
-      let ini = null, timer = 0, arrastou = false, segurou = false;
-      botao.onpointerdown = (e) => {
-        if (e.button !== 0) return;
-        botao.setPointerCapture(e.pointerId);
-        ini = { x: e.clientX, y: e.clientY, l: parseFloat(botao.style.left), t: parseFloat(botao.style.top) };
-        arrastou = segurou = false;
-        timer = setTimeout(() => { segurou = true; navigator.vibrate?.(12); menuBotao(); }, 450);
-      };
-      botao.onpointermove = (e) => {
-        if (!ini || segurou) return;
-        const dx = e.clientX - ini.x, dy = e.clientY - ini.y;
-        if (!arrastou && Math.hypot(dx, dy) < 10) return; // dedo tremeu: ainda é toque
-        arrastou = true;
-        clearTimeout(timer);
-        posicionarBotao(ini.l + dx, ini.t + dy);
-      };
-      botao.onpointerup = botao.onpointercancel = (e) => {
-        clearTimeout(timer);
-        if (!ini) return;
-        ini = null;
-        if (arrastou) { // guarda onde ficou, em fração da tela (vale em pé e deitado)
-          const { W, H } = limitesBotao();
-          chrome.storage.local.set({ botao: { x: parseFloat(botao.style.left) / W, y: parseFloat(botao.style.top) / H } });
-        } else if (!segurou && e.type === "pointerup") disparar("pagina");
-      };
-      botao.onclick = (e) => { if (!e.detail) disparar("pagina"); }; // Enter/Espaço (o toque já foi tratado acima)
-      botao.oncontextmenu = (e) => e.preventDefault(); // segurar não abre o menu do navegador
-    }
-    const limitesBotao = () => ({ W: innerWidth - botao.offsetWidth - 6, H: innerHeight - botao.offsetHeight - 6 });
-    function posicionarBotao(l, t) {
-      if (!botao) return;
-      const { W, H } = limitesBotao();
-      if (l === undefined) { l = (pref.botao?.x ?? 1) * W; t = (pref.botao?.y ?? 0.62) * H; }
-      botao.style.left = Math.max(6, Math.min(W, l)) + "px";
-      botao.style.top = Math.max(6, Math.min(H, t)) + "px";
-    }
-    function menuBotao() {
-      abrirMenu(botao.getBoundingClientRect(), [
-        ["Recortar uma área", () => disparar("recortar")],
-        [pref.auto?.[site] ? "Parar de traduzir ao rolar" : "Traduzir ao rolar", () => alternarSite("auto")],
-        [ocrLigado() ? "Sair do modo inglês" : "Páginas em inglês (lê no aparelho)", () => alternarSite("ingles")],
-        [oculto ? "Mostrar traduções" : "Ocultar traduções", alternar],
-        ["Esconder este botão neste site", () => alternarSite("semBotao")],
-      ]);
-    }
-    /** Liga/desliga uma opção só neste site (as mesmas do popup). */
-    async function alternarSite(nome) {
-      const { [nome]: lista = {} } = await chrome.storage.local.get(nome);
-      if (lista[site]) delete lista[site]; else lista[site] = true;
-      await chrome.storage.local.set({ [nome]: lista });
     }
   })();
 }

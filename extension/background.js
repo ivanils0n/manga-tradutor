@@ -3,7 +3,7 @@ import { chamar } from "./provedores.js";
 import {
   montarPrompt, montarPromptTexto, itensTexto, interpretar, interpretarTexto, parciais, parciaisTexto, pedacos, amostrar,
   analisarBalao, mesclar, textoContexto, nomesDe, juntarGlossario, obraDoTitulo, preencherBordas, linhasDoTsv,
-  agruparLinhas, ocrConfiavel, faixasPorVaos,
+  agruparLinhas, ocrConfiavel, faixasPorVaos, escolherQuadro, aplicarQuadro,
 } from "./tradutor.js";
 
 // ---------- mensagens avulsas (popup e configurações) ----------
@@ -131,6 +131,18 @@ async function chamarIa(cfg, pedido, opcoes) {
 }
 
 const abortado = () => new DOMException("cancelado", "AbortError");
+
+// Em que medida cada modelo responde as caixas (ver escolherQuadro): a última que deu certo vale para o
+// streaming da próxima resposta, antes de dar para conferir na imagem
+const quadros = new Map();
+chrome.storage.session.get("quadros").then((s) => { for (const [k, v] of Object.entries(s.quadros || {})) quadros.set(k, v); }, () => {});
+function guardarQuadro(cfg, q) {
+  const k = `${cfg.url}|${cfg.modelo}`;
+  if (JSON.stringify(quadros.get(k)) === JSON.stringify(q)) return;
+  quadros.set(k, q);
+  if (q.tipo !== "eixo") console.info("Manga Tradutor: este modelo responde as caixas noutra medida", k, q);
+  chrome.storage.session.set({ quadros: Object.fromEntries(quadros) }).catch(() => {});
+}
 
 /** Agrupa atualizações seguidas num envio só. */
 function agendador(f, ms = 60) {
@@ -304,18 +316,27 @@ async function lerPedaco(est, cfg, r, { prioridade, obra, dono, aoParcial }) {
       canvas.getContext("2d").drawImage(r.canvas, 0, y0, r.tw, alt, 0, 0, r.tw, alt);
     }
     const imagem = await paraDataUrl(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 }));
-    const daIa = (bs) => bs.map((b) => entrada({ l: b.l * r.tw, t: y0 + b.t * alt, r: b.r * r.tw, b: y0 + b.b * alt }, b.texto));
+    // caixa da IA → pixels do pedaço, na medida em que este modelo responde (dentro da faixa)
+    const naFaixa = (c) => ({
+      l: Math.max(0, Math.min(r.tw, c.l)), r: Math.max(0, Math.min(r.tw, c.r)),
+      t: y0 + Math.max(0, Math.min(alt, c.t)), b: y0 + Math.max(0, Math.min(alt, c.b)),
+    });
+    const daIa = (bs, q) => bs.map((b) => entrada(naFaixa(aplicarQuadro(b, q, r.tw, alt)), b.texto));
+    const modelo = `${cfg.url}|${cfg.modelo}`;
     const uso = {};
     const resposta = await filaIa(prioridade)(prioridade, () => {
       if (est.controle.signal.aborted) throw abortado();
       return chamarIa(cfg, { prompt, imagem, depois: textoContexto(est.contexto) }, {
         sinal: est.controle.signal, uso,
-        aoTexto: (acum) => { listas[i] = daIa(parciais(acum, coords)); aoParcial(listas.flat()); },
+        aoTexto: (acum) => { listas[i] = daIa(parciais(acum, coords), quadros.get(modelo) || { tipo: "eixo" }); aoParcial(listas.flat()); },
       });
     }, dono);
     const lidoIa = interpretar(resposta, coords);
     registrar(est, cfg, obra, resposta, uso, lidoIa.map((b) => b.texto));
-    return (listas[i] = daIa(lidoIa));
+    // confere na imagem em que medida vieram as caixas (pixels, 0-1000, lado maior…) antes de posicionar
+    const q = escolherQuadro(r.pixels, lidoIa, r.tw, alt, (c) => naFaixa(c), quadros.get(modelo));
+    if (lidoIa.length) guardarQuadro(cfg, q);
+    return (listas[i] = daIa(lidoIa, q));
   }));
   return lidas.flat();
 }
@@ -443,6 +464,15 @@ async function lerOcr(canvas, est) {
   }
 }
 
+/**
+ * Formato do balão e tamanho da letra original (em pixels do pedaço) na mesma medida das caixas: x/y
+ * levam pontos e lx/ly levam comprimentos para frações da imagem (ou da tela, no print).
+ */
+const medidas = (a, x, y, lx, ly) => ({
+  ...(a.letra > 0 && { letra: ly(a.letra) }),
+  ...(a.perfil && { perfil: { cx: x(a.perfil.cx), t: y(a.perfil.t), b: y(a.perfil.b), meia: a.perfil.meia.map(lx) } }),
+});
+
 /** Texto sobre o desenho: reconstrói o fundo atrás dele (imagem pequena que a página estica por cima). */
 async function comRemendos(itens, pixels, paraPx) {
   return Promise.all(itens.map(async (it) => {
@@ -539,6 +569,8 @@ async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
       chave: `i|${idUrl}|${q.i}|${e.id}`, texto: e.texto,
       fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: norm(e.a.cobre), area: norm(e.a.area),
       ...(e.a.alta && { alta: norm(e.a.alta) }),
+      ...medidas(e.a, (v) => (q.x + (v / r.tw) * q.w) / m.w, (v) => (q.y + (v / r.th) * q.h) / m.h,
+        (v) => ((v / r.tw) * q.w) / m.w, (v) => ((v / r.th) * q.h) / m.h),
     }];
   }));
   const entradas = await lerPedaco(est, cfg, r, { prioridade: m.prioridade, obra, dono, aoParcial: (es) => aoParcial(paraItens(es)) });
@@ -653,6 +685,7 @@ async function traduzirPrint(est, m) {
         chave: `p|${m.rid}|${qx + Math.round(e.px.l)},${qy + Math.round(e.px.t)}`, texto: e.texto,
         fundo: e.a.fundo, claro: e.a.claro, uniforme: e.a.uniforme, cobre: tela(e.a.cobre), area: tela(e.a.area),
         ...(e.a.alta && { alta: tela(e.a.alta) }),
+        ...medidas(e.a, (v) => (qx + v) / W, (v) => (qy + v) / H, (v) => v / W, (v) => v / H),
       }];
     }));
     // o cache do print guarda as falas (caixa no pedaço + texto); a análise do balão é refeita na hora

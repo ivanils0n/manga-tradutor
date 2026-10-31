@@ -179,9 +179,92 @@ function caixa(c, coords) {
   if (coords === "yx") n = [n[1], n[0], n[3], n[2]];
   // alguns modelos respondem 0..1 em vez de 0..1000
   const escala = n.every((v) => v <= 1.5) ? 1 : 1000;
-  const [x1, y1, x2, y2] = n.map((v) => Math.min(Math.max(v / escala, 0), 1));
-  if (Math.abs(x2 - x1) < 0.003 || Math.abs(y2 - y1) < 0.003) return null;
-  return { l: Math.min(x1, x2), t: Math.min(y1, y2), r: Math.max(x1, x2), b: Math.max(y1, y2) };
+  const cru = [Math.min(n[0], n[2]), Math.min(n[1], n[3]), Math.max(n[0], n[2]), Math.max(n[1], n[3])];
+  if (cru[2] - cru[0] < 0.003 * escala || cru[3] - cru[1] < 0.003 * escala) return null;
+  const f = (v) => Math.min(Math.max(v / escala, 0), 1);
+  // l/t/r/b: lido como pedido (0-1000 em cada eixo). "cru": como veio, para conferir a medida (escolherQuadro)
+  return { l: f(cru[0]), t: f(cru[1]), r: f(cru[2]), b: f(cru[3]), cru, escala };
+}
+
+// ---------- em que medida a IA respondeu as caixas ----------
+// Pedimos 0-1000 em cada eixo, mas cada modelo tem o seu jeito: o Claude e o Qwen respondem em pixels da
+// imagem que eles mesmos reduziram; outros medem os dois eixos pelo lado maior (como se a imagem fosse
+// quadrada). Lido do jeito errado, tudo sai deslocado (em faixas largas, para cima). Então a extensão
+// testa as leituras possíveis e fica com a que põe as caixas em cima de texto de verdade na imagem.
+
+/** Caixa crua → pixels de uma imagem w×h, num quadro: "eixo" (0-1000 por eixo), "centro" (0-1000 pelo lado maior, imagem centrada num quadrado) ou "escala" (cru × s: pixels). */
+export function aplicarQuadro(b, q, w, h) {
+  const [x1, y1, x2, y2] = b.cru;
+  if (q.tipo === "escala") return { l: x1 * q.s, t: y1 * q.s, r: x2 * q.s, b: y2 * q.s };
+  if (q.tipo === "centro") {
+    const L = Math.max(w, h) / b.escala, dx = (Math.max(w, h) - w) / 2, dy = (Math.max(w, h) - h) / 2;
+    return { l: x1 * L - dx, t: y1 * L - dy, r: x2 * L - dx, b: y2 * L - dy };
+  }
+  return { l: (x1 / b.escala) * w, t: (y1 / b.escala) * h, r: (x2 / b.escala) * w, b: (y2 / b.escala) * h };
+}
+
+/**
+ * Quanto a caixa c (pixels) acerta um texto, de 0 a 1: tem letras por dentro (tinta bem diferente do
+ * fundo) e pega quase toda a tinta das redondezas. Caixa deslocada pega só parte das letras e tira menos;
+ * caixa no vazio, zero.
+ */
+export function notaTexto(img, c) {
+  const { data, width: W, height: H } = img;
+  const l = Math.round(c.l), t = Math.round(c.t), r = Math.round(c.r), b = Math.round(c.b);
+  if (r - l < 6 || b - t < 6 || r < 0 || b < 0 || l >= W || t >= H) return 0;
+  const lum = (x, y) => {
+    const i = (Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))) * 4;
+    return (data[i] * 2 + data[i + 1] * 5 + data[i + 2]) >> 3;
+  };
+  // redondezas: a caixa com mais 35% de cada lado; o fundo é a cor que mais aparece na borda delas
+  const m = Math.round(Math.max(4, Math.min(r - l, b - t) * 0.35));
+  const L = l - m, T = t - m, R = r + m, B = b + m;
+  const borda = [];
+  const pb = Math.max(1, Math.round((R - L + B - T) / 60));
+  for (let x = L; x <= R; x += pb) borda.push(lum(x, T), lum(x, B));
+  for (let y = T; y <= B; y += pb) borda.push(lum(L, y), lum(R, y));
+  const fundo = mediana(borda);
+  let dentro = 0, nDentro = 0, fora = 0;
+  const px = Math.max(1, Math.round((R - L) / 40)), py = Math.max(1, Math.round((B - T) / 40));
+  for (let y = T; y <= B; y += py) {
+    for (let x = L; x <= R; x += px) {
+      const tinta = Math.abs(lum(x, y) - fundo) > 90, noMeio = x >= l && x <= r && y >= t && y <= b;
+      if (noMeio) { nDentro++; if (tinta) dentro++; } else if (tinta) fora++;
+    }
+  }
+  const densidade = dentro / Math.max(1, nDentro);
+  if (densidade < 0.02 || densidade > 0.65) return 0;
+  return dentro / (dentro + fora);
+}
+
+/**
+ * A leitura das caixas (ver aplicarQuadro) que acerta mais texto na imagem. `paraImg` leva a caixa em
+ * pixels da imagem enviada para os pixels de `img` (a faixa começa mais abaixo no pedaço). Só troca o
+ * jeito pedido ("eixo") quando outro acerta claramente mais; `ultimo`, o que este modelo usou da última
+ * vez, ganha os empates (o jeito de um modelo não muda de uma chamada para outra).
+ */
+export function escolherQuadro(img, caixas, w, h, paraImg = (c) => c, ultimo = null) {
+  const cs = caixas.filter((b) => b.cru);
+  if (!cs.length) return ultimo || { tipo: "eixo" };
+  const nota = (q) => cs.reduce((soma, b) => soma + notaTexto(img, paraImg(aplicarQuadro(b, q, w, h))), 0);
+  const eixo = nota({ tipo: "eixo" });
+  let melhor = { tipo: "centro", nota: cs[0].escala === 1000 && w !== h ? nota({ tipo: "centro" }) : 0 };
+  for (let s = 0.3; s <= 4; s *= 1.04) {
+    const n = nota({ tipo: "escala", s });
+    if (n > melhor.nota) melhor = { tipo: "escala", s, nota: n };
+  }
+  if (melhor.tipo === "escala") { // afina a escala achada
+    for (const f of [0.985, 0.995, 1.005, 1.015]) {
+      const q = { tipo: "escala", s: melhor.s * f }, n = nota(q);
+      if (n > melhor.nota) melhor = { ...q, nota: n };
+    }
+  }
+  const folga = 0.15 * cs.length; // margem para trocar o jeito pedido por outro
+  if (ultimo && ultimo.tipo !== "eixo") {
+    const nUltimo = nota(ultimo);
+    if (nUltimo >= melhor.nota - folga && nUltimo > eixo + folga / 2) return ultimo;
+  }
+  return melhor.nota > eixo + folga && melhor.nota > eixo * 1.15 ? { tipo: melhor.tipo, ...(melhor.s && { s: melhor.s }) } : { tipo: "eixo" };
 }
 
 /** Converte balões normalizados no recorte r ({x,y,w,h} em 0..1 da tela) para normalizados na tela. */
@@ -378,7 +461,43 @@ export function analisarBalao(img, c) {
     for (let k = 0; k < maxX && alta.l > 1 && linhaLisa(alta.l - 2, alta.t, alta.l - 2, alta.b); k += 2) alta.l -= 2;
     for (let k = 0; k < maxX && alta.r < W - 2 && linhaLisa(alta.r + 2, alta.t, alta.r + 2, alta.b); k += 2) alta.r += 2;
   }
-  return { fundo: hex(fundo), claro: lumi(fundo) > 140, uniforme: true, cobre, area, alta };
+
+  // tamanho da letra do original: a altura de cada linha de texto (faixas de linhas com tinta). A tradução
+  // tenta sair do mesmo tamanho; se não couber, diminui
+  let letra = 0;
+  if (tr > tl) {
+    const faixas = [];
+    for (let y = tt, ini = -1; y <= tb + passo; y += passo) {
+      let n = 0;
+      if (y < tb) for (let x = tl; x <= tr && n < 2; x += passo) if (dist(px(x, y), fundo) >= 90) n++;
+      if (n >= 2 && ini < 0) ini = y;
+      else if (n < 2 && ini >= 0) { faixas.push(y - ini); ini = -1; }
+    }
+    if (faixas.length) letra = mediana(faixas) / 0.8; // a tinta de uma linha é ~80% do tamanho da letra
+  }
+
+  // o formato do balão: até onde ele vai para os lados em cada altura, medido do meio do texto. A tradução
+  // acompanha o contorno como o letreiramento original (linhas curtas em cima e embaixo, longas no meio)
+  let perfil = null;
+  if (claro && tr > tl) {
+    const cx = Math.round((cobre.l + cobre.r) / 2);
+    const limV = Math.round(th * 1.5 + 40), limH = Math.round(Math.max(tw, th) * 1.5 + 40);
+    let topo = cobre.t, base = cobre.b;
+    while (topo > 1 && cobre.t - topo < limV && parecido(px(cx, topo - 1)) && parecido(px(cx, topo - 2))) topo--;
+    while (base < H - 2 && base - cobre.b < limV && parecido(px(cx, base + 1)) && parecido(px(cx, base + 2))) base++;
+    const meia = [];
+    for (let k = 0; k < 16; k++) {
+      const y = Math.round(topo + ((base - topo) * (k + 0.5)) / 16);
+      const naLetra = y >= cobre.t && y <= cobre.b; // na altura do texto, começa da borda dele
+      let x0 = naLetra ? cobre.l : cx, x1 = naLetra ? cobre.r : cx;
+      if (!naLetra && !parecido(px(cx, y))) { meia.push(0); continue; }
+      while (x0 > 1 && cx - x0 < limH && parecido(px(x0 - 1, y))) x0--;
+      while (x1 < W - 2 && x1 - cx < limH && parecido(px(x1 + 1, y))) x1++;
+      meia.push(Math.min(cx - x0, x1 - cx));
+    }
+    perfil = { cx, t: topo, b: base, meia };
+  }
+  return { fundo: hex(fundo), claro: lumi(fundo) > 140, uniforme: true, cobre, area, alta, letra, perfil };
 }
 
 /**
@@ -407,7 +526,7 @@ export function preencherBordas(img, c, maxLado = 128) {
   const esq = ys.map((y) => media(c.l - fora, y)), dir = ys.map((y) => media(c.r + fora, y));
   // em volta é textura (desenho cheio de detalhe): a média das bordas vira listras. Melhor uma caixa lisa
   const aspereza = (v) => v.slice(1).reduce((s, p, i) => s + Math.abs(p[0] - v[i][0]) + Math.abs(p[1] - v[i][1]) + Math.abs(p[2] - v[i][2]), 0) / (3 * Math.max(1, v.length - 1));
-  if ((aspereza(cima) + aspereza(baixo) + aspereza(esq) + aspereza(dir)) / 4 > 10) return null;
+  if ((aspereza(cima) + aspereza(baixo) + aspereza(esq) + aspereza(dir)) / 4 > 4) return null; // só cor lisa ou degradê
   const out = new Uint8ClampedArray(w * h * 4);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {

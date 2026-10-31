@@ -32,8 +32,7 @@ Cada push na `main` gera de novo só a parte que mudou.
 
 ## Extensão Mobile (celular)
 Um pacote só para qualquer navegador de celular que aceita extensões: `manga-tradutor-extensao-mobile.zip`.
-Na página do mangá aparece o botão **PT** (igual ao do app):
-- **Toque** traduz o que está na tela; **segure** para o menu (recortar com o dedo, traduzir ao rolar, páginas em inglês, ocultar, esconder o botão neste site); **arraste** para mudar de lugar.
+- Abra a extensão pelo menu do navegador (Extensões → Manga Tradutor): **Traduzir página**, **Recortar área** (marque com o dedo) e, em **Neste site**, **Traduzir ao rolar**, que deixa as próximas páginas traduzidas enquanto você lê.
 - No balão traduzido: toque mostra o original; segure para remover.
 
 **Lemur, Kiwi, Edge, Yandex e outros baseados no Chromium:**
@@ -57,7 +56,8 @@ Se o navegador não deixar a extensão ler o texto no aparelho (modo inglês), e
 - O recorte sai da imagem original quando a área marcada é de imagens da página (mais nítido, sem print); canvas e o resto vão por print.
 - Cada tradução fica guardada no navegador pelo endereço da imagem e pelo conteúdo do arquivo, valendo para qualquer IA: voltar a uma página, recarregar, trocar de API ou o site mudar o endereço da imagem não gasta tokens de novo e aparece na hora. Passando de 20.000 pedaços, os mais antigos saem sozinhos.
 - **Glossário automático:** a IA anota nomes de personagens, lugares e golpes de cada obra, e eles passam a sair sempre iguais. Dá para ver e apagar nas configurações. As últimas falas também vão junto como contexto.
-- A IA devolve a caixa do texto e a tradução num JSON compacto. A extensão confere a caixa na própria imagem (corrige caixas tortas ou folgadas), mede a cor do balão e até onde ele vai, e encaixa a tradução no espaço do balão (o largo ou o alto, o que der a letra maior).
+- A IA devolve a caixa do texto e a tradução num JSON compacto. Cada modelo mede as caixas do seu jeito (0-1000 por eixo, pixels da imagem que ele reduziu, pelo lado maior…): a extensão testa as leituras possíveis e fica com a que cai em cima de texto de verdade na imagem, então a tradução vai para o balão certo com qualquer IA.
+- A extensão confere a caixa na própria imagem (corrige caixas tortas ou folgadas), mede a cor do balão, o formato dele e o tamanho da letra original. A tradução sai do mesmo tamanho da letra original quando cabe, cada linha com a largura do balão naquela altura (como o letreiramento de mangá), sem picar palavra curta; se não couber, a letra diminui e, no último caso, vira um balão novo maior, dentro da tela.
 - Os balões traduzidos ficam presos à página (rolam junto, sem atraso no celular) e são desenhados como imagem: o modo escuro forçado de alguns navegadores não muda a cor deles.
 - **Uso:** as configurações mostram chamadas, tokens e quanto o cache e a leitura no PC economizaram.
 - Tesseract (núcleo WebAssembly e modelo de inglês): licença Apache 2.0, em `extension/tesseract/`.

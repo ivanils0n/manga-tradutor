@@ -2,32 +2,33 @@ import assert from "node:assert/strict";
 import {
   interpretar, paraTela, parciais, pedacos, montarPrompt, analisarBalao, amostrar, mesclar, sobreposicao, textoContexto,
   montarPromptTexto, itensTexto, interpretarTexto, parciaisTexto, nomesDe, juntarGlossario, obraDoTitulo,
-  preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel, faixasPorVaos,
+  preencherBordas, linhasDoTsv, agruparLinhas, ocrConfiavel, faixasPorVaos, escolherQuadro, aplicarQuadro, notaTexto,
 } from "./tradutor.js";
 import { chamar } from "./provedores.js";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const perto = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+const sem = (bs) => bs.map(({ cru, escala, ...b }) => b); // as caixas sem o valor cru (conferido à parte)
 
 // ---- resposta final: formato compacto, variações e erros
-assert.deepEqual(interpretar('```json\n{"t":[[100,100,500,300," Oi "],[1,2,3,"x"],[0,0,0,10,"y"]]}\n```'), [
+assert.deepEqual(sem(interpretar('```json\n{"t":[[100,100,500,300," Oi "],[1,2,3,"x"],[0,0,0,10,"y"]]}\n```')), [
   { l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "Oi" },
 ]);
-assert.deepEqual(interpretar('{"baloes":[{"caixa":[500,100,100,300],"texto":"a"}]}'), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "a" }]);
-assert.deepEqual(interpretar('[{"box_2d":[100,200,300,400],"text":"b"}]', "yx"), [{ l: 0.2, t: 0.1, r: 0.4, b: 0.3, texto: "b" }]);
-assert.deepEqual(interpretar('{"t":[[0.1,0.1,0.5,0.3,"c"]]}'), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "c" }]);
-assert.deepEqual(interpretar("sem json"), []);
-assert.deepEqual(interpretar('{"t":[]}'), []);
+assert.deepEqual(sem(interpretar('{"baloes":[{"caixa":[500,100,100,300],"texto":"a"}]}')), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "a" }]);
+assert.deepEqual(sem(interpretar('[{"box_2d":[100,200,300,400],"text":"b"}]', "yx")), [{ l: 0.2, t: 0.1, r: 0.4, b: 0.3, texto: "b" }]);
+assert.deepEqual(sem(interpretar('{"t":[[0.1,0.1,0.5,0.3,"c"]]}')), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "c" }]);
+assert.deepEqual(sem(interpretar("sem json")), []);
+assert.deepEqual(sem(interpretar('{"t":[]}')), []);
 // cortada no meio (limite de tokens): aproveita o que veio completo
-assert.deepEqual(interpretar('{"t":[[100,100,500,300,"Oi"],[600,6'), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "Oi" }]);
+assert.deepEqual(sem(interpretar('{"t":[[100,100,500,300,"Oi"],[600,6')), [{ l: 0.1, t: 0.1, r: 0.5, b: 0.3, texto: "Oi" }]);
 
 // ---- streaming: caixa antes do texto, texto pela metade, escape cortado
-assert.deepEqual(parciais('{"t":[[100,100,200,200,"Olá \\"mun'), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: 'Olá "mun' }]);
-assert.deepEqual(parciais('{"t":[[100,100,200,200,'), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: "" }]);
-assert.deepEqual(parciais('{"t":[[100,100,200,2'), []); // último número pode estar incompleto
+assert.deepEqual(sem(parciais('{"t":[[100,100,200,200,"Olá \\"mun')), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: 'Olá "mun' }]);
+assert.deepEqual(sem(parciais('{"t":[[100,100,200,200,')), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: "" }]);
+assert.deepEqual(sem(parciais('{"t":[[100,100,200,2')), []); // último número pode estar incompleto
 assert.equal(parciais('{"t":[[1,1,90,90,"a\\u00e')[0].texto, "a");
-assert.deepEqual(parciais('{"baloes":[{"caixa":[100,100,200,200],"texto":"x'), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: "x" }]);
+assert.deepEqual(sem(parciais('{"baloes":[{"caixa":[100,100,200,200],"texto":"x')), [{ l: 0.1, t: 0.1, r: 0.2, b: 0.2, texto: "x" }]);
 
 perto(paraTela([{ l: 0, t: 0.5, r: 1, b: 1, texto: "a" }], { x: 0.25, y: 0.5, w: 0.5, h: 0.25 })[0].t, 0.625);
 
@@ -278,15 +279,47 @@ assert.doesNotMatch(pu, /one string per item/);
   for (const q of [a.area, a.alta]) for (const [x, y] of [[q.l, q.t], [q.r, q.t], [q.l, q.b], [q.r, q.b]]) {
     assert.ok(((x - 200) / 150) ** 2 + ((y - 200) / 150) ** 2 < 1.05, "os cantos ficam dentro do balão");
   }
+  // letra do original: a faixa de tinta tem 30 px de altura → ~37 px de letra
+  assert.ok(Math.abs(a.letra - 37.5) < 3, `letra ${a.letra}`);
+  // formato: do topo à base do balão, largo no meio e estreito nas pontas
+  const p = a.perfil;
+  assert.ok(p && p.b - p.t > 180 && Math.abs(p.cx - 200) < 4, JSON.stringify(p)); // vai até ~1,5× a altura do texto para cada lado
+  assert.ok(p.meia[8] > 130 && p.meia[0] < p.meia[8] * 0.85 && p.meia[15] < p.meia[8] * 0.85, p.meia.join(","));
+}
+
+// ---- medida das caixas: a mesma resposta lida em 0-1000 por eixo, pelo lado maior ou em pixels de outra escala
+{
+  const w = 800, h = 400, d = new Uint8ClampedArray(w * h * 4).fill(255);
+  const blocos = [[100, 60, 260, 120], [450, 200, 650, 260], [120, 300, 300, 350]];
+  for (const [l, t, r, b] of blocos) {
+    for (const [y0, y1] of [[t, t + (b - t) * 0.4], [t + (b - t) * 0.6, b]]) { // duas linhas de "letras"
+      for (let y = Math.round(y0); y < y1; y++) for (let x = l; x < r; x++) if ((x >> 2) % 3 === 0) d.fill(0, (y * w + x) * 4, (y * w + x) * 4 + 3);
+    }
+  }
+  const img = { data: d, width: w, height: h };
+  const resposta = (f) => interpretar(JSON.stringify({ t: blocos.map((c) => [...f(c).map(Math.round), "x"]) }));
+  const eixo = resposta(([l, t, r, b]) => [l / w * 1000, t / h * 1000, r / w * 1000, b / h * 1000]);
+  const maior = resposta(([l, t, r, b]) => [l / w * 1000, t / w * 1000, r / w * 1000, b / w * 1000]); // "quadrado" pelo lado maior
+  const pixels = resposta((c) => c.map((v) => v * 0.7)); // pixels da imagem que o modelo reduziu para 70%
+  assert.ok(notaTexto(img, { l: 100, t: 60, r: 260, b: 120 }) > 0.9 && notaTexto(img, { l: 300, t: 130, r: 420, b: 190 }) === 0);
+  assert.equal(escolherQuadro(img, eixo, w, h).tipo, "eixo");
+  for (const [nome, cs] of [["lado maior", maior], ["pixels reduzidos", pixels]]) {
+    const q = escolherQuadro(img, cs, w, h);
+    const caixas = cs.map((b) => aplicarQuadro(b, q, w, h));
+    caixas.forEach((c, i) => assert.ok(Math.abs(c.t - blocos[i][1]) < 12 && Math.abs(c.l - blocos[i][0]) < 12, `${nome}: ${JSON.stringify(q)} ${JSON.stringify(c)}`));
+  }
 }
 
 // ---- desenho dos balões (desenho.js, script comum da página): quebra, encaixe e balão novo
 {
   vm.runInThisContext(readFileSync(new URL("./desenho.js", import.meta.url), "utf8"));
-  const { quebrarLinhas, encaixarTexto, caixaExpandida } = globalThis;
+  const { quebrarLinhas, encaixarTexto, caixaExpandida, encaixarNoBalao } = globalThis;
   const medirCom = (s) => (t) => t.length * s * 0.55; // letra "monoespaçada" de mentira
   assert.deepEqual(quebrarLinhas(["um", "dois", "tres"], 33, medirCom(10)), ["um", "dois", "tres"]);
-  assert.deepEqual(quebrarLinhas(["paralelepipedo"], 33, medirCom(10)), ["paral-", "elepi-", "pedo"]);
+  assert.equal(quebrarLinhas(["paralelepipedo"], 33, medirCom(10)), null); // sem partir palavra: não coube
+  assert.deepEqual(quebrarLinhas(["paralelepipedo"], 33, medirCom(10), true), ["paral-", "elepi-", "pedo"]);
+  assert.equal(quebrarLinhas(["Alfred"], 20, medirCom(10), true), null); // palavra curta nunca vira "Al-fr-ed"
+  assert.deepEqual(quebrarLinhas(["a", "bb", "ccc"], [6, 40, 40], medirCom(10)), ["a", "bb ccc"]); // uma largura por linha
   const frase = "Ei! Para onde você pensa que vai com tanta pressa assim?";
   const e = encaixarTexto(frase, 160, 120, 11, 30, 1.1, medirCom);
   assert.ok(e && e.tamanho >= 11 && e.tamanho <= 30);
@@ -301,5 +334,17 @@ assert.doesNotMatch(pu, /one string per item/);
   assert.equal(x.linhas.join(" "), frase);
   assert.ok(x.linhas.every((l) => l.length * 13 * 0.55 <= x.w - 1.2 * 13 + 0.5));
   assert.ok(caixaExpandida(frase.repeat(6), 60, 30, 13, 1.1, medirCom, 200).w <= 200, "nunca mais largo que a tela");
+  // no formato do balão (redondo): linhas curtas nas pontas, longas no meio, todas dentro do contorno
+  const R = 90, perfil = { cx: 100, t: 10, b: 190, meia: Array.from({ length: 16 }, (_, i) => Math.sqrt(R * R - (10 + (i + 0.5) * 180 / 16 - 100) ** 2)) };
+  const nb = encaixarNoBalao(frase, perfil, 100, 11, 30, 1.1, medirCom);
+  assert.ok(nb && nb.tamanho >= 13, JSON.stringify(nb));
+  assert.equal(nb.linhas.map((l) => l.texto).join(" "), frase);
+  for (const ln of nb.linhas) {
+    const meia = Math.sqrt(Math.max(0, R * R - (Math.abs(ln.y - 100) + nb.tamanho * 0.55) ** 2));
+    assert.ok(ln.texto.length * nb.tamanho * 0.55 / 2 <= meia, `linha "${ln.texto}" passa do balão`);
+  }
+  const ret = encaixarTexto(frase, 2 * 63, 2 * 63, 11, 30, 1.1, medirCom); // o maior quadrado dentro do mesmo círculo
+  assert.ok(nb.tamanho >= ret.tamanho, `formato do balão dá letra maior (${nb.tamanho} vs ${ret.tamanho})`);
+  assert.equal(encaixarNoBalao(frase, perfil, 100, 11, 13, 1.1, medirCom).tamanho, 13); // nunca maior que a letra original
 }
 console.log("ok");

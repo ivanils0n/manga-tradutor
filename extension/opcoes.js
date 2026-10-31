@@ -116,15 +116,15 @@ async function mostrarGlossarios() {
 }
 mostrarGlossarios();
 
-// ---------- 03 atalhos (no celular, sem teclado: o botão PT) ----------
+// ---------- 03 atalhos (no celular, sem teclado: como usar pelo menu do navegador) ----------
 if (matchMedia("(hover: none) and (pointer: coarse)").matches) {
   const s = $("atalhos"), h2 = s.querySelector("h2");
-  h2.lastChild.textContent = " Botão PT";
+  h2.lastChild.textContent = " No celular";
   s.replaceChildren(h2, Object.assign(document.createElement("p"), {
     className: "sub",
-    textContent: "No celular, a página do mangá ganha o botão PT. Toque: traduz o que está na tela. Segure: menu com recortar, "
-      + "traduzir ao rolar, páginas em inglês e ocultar. Arraste: muda de lugar. Num balão traduzido, toque mostra o original "
-      + "e segurar abre as opções dele.",
+    textContent: "Abra a extensão pelo menu do navegador (Extensões → Manga Tradutor) e use Traduzir página, Recortar área "
+      + "ou ligue Traduzir ao rolar, que já deixa as próximas páginas traduzidas enquanto você lê. Num balão traduzido, "
+      + "toque mostra o original e segurar abre as opções dele.",
   }));
 }
 let atalhos = await lerAtalhos();
