@@ -43,20 +43,20 @@ export function montarPrompt(o, coords = "xy") {
 /**
  * Prompt do modo inglês: o texto já foi lido no PC (Tesseract), então a IA recebe só texto, corrige os
  * erros de leitura e traduz. Sem imagem a chamada fica bem mais barata.
- * `unico`: uma chamada por balão. A IA vê todos os itens da página (contexto), mas escreve só o pedido no fim.
+ * `unico`: uma chamada por balão. A IA vê todos os itens da página (contexto), mas escreve só os pedidos no fim.
  */
 export function montarPromptTexto(o, unico = false) {
   const glossario = textoGlossario(o);
   return [
     "English manga/manhwa text read by OCR, so it may have recognition errors (| for I, broken or missing letters)."
       + " Each numbered item is one speech bubble or caption, in reading order.",
-    `Fix the OCR errors and translate ${unico ? "only the item asked at the end (the other items are context)" : "each item"}`
+    `Fix the OCR errors and translate ${unico ? "only the item(s) asked at the end (the other items are context)" : "each item"}`
       + ` into natural, fluent ${LINGUA[o.idioma] || o.idioma}, like a professional`
       + " scanlation: keep each character's voice and the scene's context, keep it short to fit the bubble."
       + (o.honorificos ? " Keep Japanese honorifics (-san, -kun, -chan, -sama, senpai)." : ""),
     glossario && `Glossary, always use: ${glossario}`,
     (unico
-      ? 'Reply ONLY with JSON: {"t":["translation"]}. Use "" if it is only OCR noise'
+      ? 'Reply ONLY with JSON: {"t":["translation"]}, one string per asked item, same order. Use "" for an item that is only OCR noise'
       : 'Reply ONLY with JSON: {"t":["translation 1","translation 2"]}, exactly one string per item, same order.'
         + ' Use "" for an item that is only OCR noise') + (o.onomatopeias ? "." : " or a sound effect.") + (o.aprender ? NOMES : ""),
   ].filter(Boolean).join("\n");

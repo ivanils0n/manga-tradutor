@@ -56,7 +56,12 @@ $("testar").onclick = async () => {
   t.textContent = "Mandando um balão de teste…";
   $("testar").disabled = true;
   await new Promise((ok) => setTimeout(ok, 400)); // deixa o último campo digitado ser salvo
-  const r = await chrome.runtime.sendMessage({ tipo: "testar" }).catch((e) => ({ erro: e.message }));
+  const r = await chrome.runtime.sendMessage({ tipo: "testar" }).catch((e) => ({
+    // a parte de fundo da extensão não carregou (pacote errado para este navegador, ou travou)
+    erro: /receiving end|establish connection/i.test(e.message)
+      ? "A parte da extensão que chama a IA não está rodando. Remova a extensão e instale o pacote certo (no celular, a Extensão Mobile); depois recarregue a página."
+      : e.message,
+  }));
   $("testar").disabled = false;
   if (r?.erro) {
     t.className = "teste erro";
@@ -111,7 +116,17 @@ async function mostrarGlossarios() {
 }
 mostrarGlossarios();
 
-// ---------- 03 atalhos ----------
+// ---------- 03 atalhos (no celular, sem teclado: o botão PT) ----------
+if (matchMedia("(hover: none) and (pointer: coarse)").matches) {
+  const s = $("atalhos"), h2 = s.querySelector("h2");
+  h2.lastChild.textContent = " Botão PT";
+  s.replaceChildren(h2, Object.assign(document.createElement("p"), {
+    className: "sub",
+    textContent: "No celular, a página do mangá ganha o botão PT. Toque: traduz o que está na tela. Segure: menu com recortar, "
+      + "traduzir ao rolar, páginas em inglês e ocultar. Arraste: muda de lugar. Num balão traduzido, toque mostra o original "
+      + "e segurar abre as opções dele.",
+  }));
+}
 let atalhos = await lerAtalhos();
 const gravadores = [...document.querySelectorAll(".gravador")];
 

@@ -233,7 +233,7 @@ assert.equal(obraDoTitulo("One Piece Capítulo 12", "s"), "s|one piece");
 assert.equal(obraDoTitulo("Chapter 3 - Algo", "s"), "s|");
 // uma chamada por balão: a IA vê a página toda, mas devolve só o item pedido
 const pu = montarPromptTexto({ idioma: "pt-BR" }, true);
-assert.match(pu, /only the item asked at the end/);
+assert.match(pu, /only the item\(s\) asked at the end/);
 assert.match(pu, /\{"t":\["translation"\]\}/);
 assert.doesNotMatch(pu, /one string per item/);
 

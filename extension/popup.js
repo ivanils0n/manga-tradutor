@@ -43,14 +43,25 @@ lerAtalhos().then((a) => {
   }
 });
 
+/**
+ * A página do mangá. No celular o popup pode abrir como uma aba própria (aí a aba ativa é ele mesmo):
+ * vale a última página da web visitada.
+ */
+const alvo = (async () => {
+  const [ativa] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (/^https?:/.test(ativa?.url || "")) return ativa;
+  const abas = (await chrome.tabs.query({})).filter((t) => /^https?:/.test(t.url || ""));
+  return abas.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || ativa;
+})();
+
 for (const b of document.querySelectorAll("[data-acao]")) {
   b.onclick = async () => {
-    await chrome.runtime.sendMessage({ acao: b.dataset.acao });
+    await chrome.runtime.sendMessage({ acao: b.dataset.acao, tabId: (await alvo)?.id });
     window.close();
   };
 }
 document.getElementById("alternar").onclick = async () => {
-  await chrome.runtime.sendMessage({ acao: "alternar" });
+  await chrome.runtime.sendMessage({ acao: "alternar", tabId: (await alvo)?.id });
   window.close();
 };
 document.getElementById("config").onclick = (e) => {
@@ -66,11 +77,11 @@ if (matchMedia("(hover: none) and (pointer: coarse)").matches) {
 }
 
 // opções que valem por site (ao rolar, inglês, atalhos de uma tecla, botão PT)
-chrome.tabs?.query({ active: true, currentWindow: true }).then(async ([tab]) => {
+alvo.then(async (tab) => {
   const chaves = [...document.querySelectorAll("[data-site]")];
   let site = "";
   try { site = new URL(tab.url).hostname; } catch {}
-  if (!site || !/^https?:/.test(tab.url)) {
+  if (!site || !/^https?:/.test(tab?.url || "")) {
     for (const c of chaves) c.disabled = true;
     document.getElementById("site").textContent = "indisponível nesta página";
     return;

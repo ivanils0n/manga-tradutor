@@ -21,7 +21,10 @@ chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
     cache("contar").then((n) => responder(n ?? 0));
     return true;
   }
-  if (msg.acao) chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab && dispararNaAba(tab.id, msg.acao));
+  if (msg.acao) { // o popup manda a aba (no celular ele pode abrir como uma aba própria)
+    (msg.tabId ? Promise.resolve(msg.tabId) : chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => t?.id))
+      .then((id) => id && dispararNaAba(id, msg.acao));
+  }
 });
 
 /** O popup pede a ação; quem executa é a página. Se ela foi aberta antes da extensão, injeta o script antes. */
@@ -373,26 +376,34 @@ async function traduzirPorBalao(est, cfg, textos, prioridade, obra, aoParcial) {
   const comNomes = await comGlossario(cfg, obra);
   const pagina = [itensTexto(textos), textoContexto(est.contexto)].filter(Boolean).join("\n");
   const parcial = textos.map(() => "");
-  const traduzidos = await Promise.all(textos.map(async (_, i) => {
+  // no máximo 8 chamadas (as que rodam ao mesmo tempo): com mais balões, cada uma leva alguns em sequência,
+  // o que é tão rápido quanto e gasta menos que esperar uma segunda rodada
+  const n = Math.min(textos.length, 8);
+  const grupos = Array.from({ length: n }, (_, g) => [Math.floor((g * textos.length) / n), Math.floor(((g + 1) * textos.length) / n)]);
+  await Promise.all(grupos.map(async ([a, b], g) => {
     // só a primeira anota nomes novos da obra: as outras repetiriam os mesmos (tokens à toa)
-    const prompt = montarPromptTexto({ ...comNomes, aprender: comNomes.aprender && i === 0 }, true);
+    const prompt = montarPromptTexto({ ...comNomes, aprender: comNomes.aprender && g === 0 }, true);
+    const pedido = b - a === 1 ? `Translate item ${a + 1}.` : `Translate items ${a + 1}-${b}.`;
     const uso = {};
     const resposta = await filaTela(prioridade, () => {
       if (est.controle.signal.aborted) throw abortado();
-      return chamarIa(cfg, { prompt, depois: `${pagina}\nTranslate item ${i + 1}.` }, {
+      return chamarIa(cfg, { prompt, depois: `${pagina}\n${pedido}` }, {
         sinal: est.controle.signal, uso,
-        aoTexto: (acum) => { parcial[i] = parciaisTexto(acum)[0] ?? ""; aoParcial(parcial.slice()); },
+        aoTexto: (acum) => {
+          parciaisTexto(acum).slice(0, b - a).forEach((t, k) => (parcial[a + k] = t));
+          aoParcial(parcial.slice());
+        },
       });
     });
     registrar(est, cfg, obra, resposta, uso, []);
-    return (parcial[i] = interpretarTexto(resposta, 1)[0]);
+    interpretarTexto(resposta, b - a).forEach((t, k) => (parcial[a + k] = t));
   }));
-  lembrar(est, traduzidos); // na ordem de leitura, não na ordem em que as respostas chegaram
-  return traduzidos;
+  lembrar(est, parcial); // na ordem de leitura, não na ordem em que as respostas chegaram
+  return parcial;
 }
 
 // ---------- OCR (Tesseract) num documento invisível da extensão ----------
-let ocrPronto = null;
+let ocrPronto = null, semOcr = false; // semOcr: este navegador não consegue rodar o OCR (alguns de celular)
 function garantirOcr() {
   return (ocrPronto ??= (async () => {
     if (!chrome.offscreen) { // Firefox: o background é uma página; o documento do OCR entra nela como iframe
@@ -409,9 +420,17 @@ function garantirOcr() {
   })().catch((e) => { ocrPronto = null; throw e; }));
 }
 /** O que o OCR leu no pedaço ({ grupos (um por balão), linhas }), ou null se ele não estiver disponível. */
-async function lerOcr(canvas) {
+async function lerOcr(canvas, est) {
+  if (semOcr) return null;
   try {
     await garantirOcr();
+  } catch (e) { // não tem como rodar aqui: não tenta de novo a cada página e avisa uma vez
+    console.warn("OCR indisponível neste navegador:", e);
+    semOcr = true;
+    if (est) enviar(est, { tipo: "aviso", msg: "Este navegador não roda a leitura no aparelho: as páginas em inglês vão pela IA com imagem." });
+    return null;
+  }
+  try {
     const png = await paraDataUrl(await canvas.convertToBlob({ type: "image/png" }));
     const r = await chrome.runtime.sendMessage({ alvo: "ocr", imagem: png });
     if (!r || r.erro) throw new Error(r?.erro || "o OCR não respondeu");
@@ -504,7 +523,7 @@ async function traduzirPedacoImagem(est, cfg, m, q, idUrl, obra, aoParcial) {
     g.drawImage(img, q.x * fx, q.y * fy, q.w * fx, q.h * fy, 0, 0, tw, th);
     const pixels = g.getImageData(0, 0, tw, th);
     if (amostrar(pixels, { x: 0, y: 0, w: tw, h: th }).desvio < 4) return { itens: [] }; // pedaço liso
-    return { canvas, pixels, tw, th, chaveConteudo, ocr: m.ocr ? await lerOcr(canvas) : null };
+    return { canvas, pixels, tw, th, chaveConteudo, ocr: m.ocr ? await lerOcr(canvas, est) : null };
   }, dono);
   if (r.itens) return r.itens;
 
@@ -596,7 +615,10 @@ async function traduzirPrint(est, m) {
   const obra = obraDe(est, m);
   const tab = await chrome.tabs.get(est.tabId);
   if (!tab.active) throw new Error("a aba precisa estar visível");
-  const print = await capturar(tab.windowId);
+  // canvas, recorte fora de imagens e imagens que não baixam dependem do print da tela
+  const semPrint = "Este navegador não deixa a extensão tirar print da tela: aqui só dá para traduzir imagens da página";
+  if (!chrome.tabs.captureVisibleTab) throw new Error(semPrint);
+  const print = await capturar(tab.windowId).catch((e) => { throw new Error(`${semPrint} (${e.message})`); });
   enviar(est, { rid: m.rid, tipo: "capturado" });
   const bitmap = await createImageBitmap(await (await fetch(print)).blob());
   const W = bitmap.width, H = bitmap.height;
@@ -641,7 +663,7 @@ async function traduzirPrint(est, m) {
         return { id: "", px, texto: s.texto, a: analisarBalao(r.pixels, px) };
       });
     } else {
-      if (m.ocr) r.ocr = await filaLocal(m.prioridade, () => lerOcr(r.canvas), dono);
+      if (m.ocr) r.ocr = await filaLocal(m.prioridade, () => lerOcr(r.canvas, est), dono);
       entradas = await lerPedaco(est, cfg, r, {
         prioridade: m.prioridade, obra, dono,
         aoParcial: (es) => { listas[i] = paraItens(es); atualizar(); },

@@ -5,7 +5,7 @@ Traduz os balões de mangá para português usando a API da DeepSeek.
 | Pasta | O que é | Download |
 |---|---|---|
 | `android/` | App Android com botão flutuante | Releases → **Android – última versão** → `manga-tradutor.apk` |
-| `extension/` | Extensão para Chrome/Edge no PC e para navegadores de celular com extensões | Releases → **Extensão – última versão** → `manga-tradutor-extensao.zip` (Chrome, Edge e Chromium no Android) ou `manga-tradutor-firefox.xpi` (Firefox, inclusive no Android) |
+| `extension/` | Extensão para o navegador: PC e celular | Releases → **Extensão – última versão** → PC: `manga-tradutor-extensao.zip` · Celular: **Extensão Mobile** `manga-tradutor-extensao-mobile.zip` (ou `.xpi` para o Firefox) |
 
 Cada push na `main` gera de novo só a parte que mudou.
 
@@ -30,18 +30,25 @@ Cada push na `main` gera de novo só a parte que mudou.
    - **Atalhos de uma tecla**: desligue no site cujos atalhos brigarem com os da extensão.
 6. Quando sair versão nova, o popup avisa com um link para baixar.
 
-## Extensão no celular (Android)
-A mesma extensão roda em navegador de celular que aceita extensões. Na página do mangá aparece o botão **PT** (igual ao do app):
+## Extensão Mobile (celular)
+Um pacote só para qualquer navegador de celular que aceita extensões: `manga-tradutor-extensao-mobile.zip`.
+Na página do mangá aparece o botão **PT** (igual ao do app):
 - **Toque** traduz o que está na tela; **segure** para o menu (recortar com o dedo, traduzir ao rolar, páginas em inglês, ocultar, esconder o botão neste site); **arraste** para mudar de lugar.
 - No balão traduzido: toque mostra o original; segure para remover.
 
-**Firefox para Android** — o Firefox só instala extensão assinada pela Mozilla. Uma vez só:
+**Lemur, Kiwi, Edge, Yandex e outros baseados no Chromium:**
+1. Baixe o `manga-tradutor-extensao-mobile.zip` no celular.
+2. Abra `chrome://extensions`, ligue **Modo do desenvolvedor** e use **Carregar sem compactação** (ou "instalar de .zip/.crx") com o arquivo. Ao atualizar, remova a versão antiga antes.
+3. Toque na extensão → **Configurações**: escolha a IA, cole a chave e use **Testar conexão**.
+4. Podem aparecer avisos sobre `background.page` e `browser_specific_settings`: são as partes do pacote que só o Firefox usa, o navegador ignora e a extensão funciona normalmente.
+
+**Firefox para Android** — o Firefox só instala extensão assinada pela Mozilla, então ele usa a mesma Extensão Mobile em `.xpi` assinado. Para o GitHub gerar esse arquivo (uma vez só):
 1. Crie uma conta em [addons.mozilla.org](https://addons.mozilla.org) e gere a chave de API em [Developer Hub → API keys](https://addons.mozilla.org/developers/addon/api/key/).
 2. No GitHub do projeto: **Settings → Secrets and variables → Actions → New repository secret**, crie `AMO_JWT_ISSUER` e `AMO_JWT_SECRET` com os dois valores.
-3. Em **Actions → Extensão (Chrome/Edge/Firefox) → Run workflow**. A partir daí cada versão sai também como `manga-tradutor-firefox.xpi` em Releases. A assinatura é "não listada": a extensão não aparece na loja.
-4. No celular, baixe o `.xpi`. No Firefox: **Configurações → Sobre o Firefox**, toque 5 vezes no logo; volte em **Configurações → Instalar extensão a partir de arquivo** e escolha o `.xpi`.
+3. Em **Actions → Extensão (PC e Mobile) → Run workflow**. A partir daí cada versão sai também como `manga-tradutor-extensao-mobile.xpi`. A assinatura é "não listada": a extensão não aparece na loja.
+4. No Firefox: **Configurações → Sobre o Firefox**, toque 5 vezes no logo; volte em **Configurações → Instalar extensão a partir de arquivo** e escolha o `.xpi`.
 
-**Navegadores baseados no Chromium que carregam extensão de arquivo** (.zip/.crx): instale o mesmo `manga-tradutor-extensao.zip` do PC pelo modo de desenvolvedor do navegador.
+Se o navegador não deixar a extensão ler o texto no aparelho (modo inglês), ela avisa e vai pela IA com imagem; se não deixar tirar print, as imagens da página continuam funcionando e só leitores em canvas ficam de fora (com aviso).
 
 ### Como funciona
 - Cada página de mangá é traduzida a partir da própria imagem (baixada com o Referer do site), não de um print: não depende da rolagem e dá para traduzir páginas que ainda não apareceram. Canvas e imagens que o site não deixa baixar vão por print.

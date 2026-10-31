@@ -1,4 +1,4 @@
-name: Extensão (Chrome/Edge/Firefox)
+name: Extensão (PC e Mobile)
 
 on:
   push:
@@ -13,8 +13,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # opcionais: com a chave de API do addons.mozilla.org nos secrets, sai também o .xpi assinado
-      # (o Firefox do celular só instala extensão assinada pela Mozilla)
+      # opcionais: com a chave de API do addons.mozilla.org nos secrets, sai também a Extensão Mobile em .xpi
+      # assinado (o Firefox só instala extensão assinada pela Mozilla)
       AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
       AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     defaults:
@@ -26,42 +26,43 @@ jobs:
         with:
           node-version: 22
       - run: node tradutor.test.mjs
-      - name: Pacote do Firefox (Android e PC)
+      - name: Extensão Mobile (qualquer navegador de celular com extensões)
         run: |
-          rm -rf ../firefox && cp -r . ../firefox && rm ../firefox/tradutor.test.mjs
-          # o Firefox roda o background numa página (não tem service worker de extensão) e exige um ID
+          rm -rf ../mobile && cp -r . ../mobile && rm ../mobile/tradutor.test.mjs
+          # um pacote para todos: os baseados no Chromium (Lemur, Edge, Yandex…) usam o service worker e
+          # ignoram a página de fundo; o Firefox usa a página de fundo e ignora o service worker. O Firefox
+          # também exige um ID. Os dois mostram um aviso inofensivo sobre a parte que é do outro.
           node -e '
-            const fs = require("fs"), arq = "../firefox/manifest.json", m = JSON.parse(fs.readFileSync(arq));
-            m.background = { page: "background.html" };
-            m.permissions = m.permissions.filter((p) => p !== "offscreen");
+            const fs = require("fs"), arq = "../mobile/manifest.json", m = JSON.parse(fs.readFileSync(arq));
+            m.background = { ...m.background, page: "background.html" };
             m.browser_specific_settings = {
               gecko: { id: "manga-tradutor@ivanils0n", strict_min_version: "128.0", data_collection_permissions: { required: ["websiteContent"] } },
               gecko_android: { strict_min_version: "128.0" },
             };
             fs.writeFileSync(arq, JSON.stringify(m, null, 2));'
           # validador oficial da Mozilla; os problemas viram anotações na execução (não bloqueiam o pacote)
-          npx --yes web-ext@8 lint --source-dir ../firefox --self-hosted --output json > ../lint.json || true
+          npx --yes web-ext@8 lint --source-dir ../mobile --self-hosted --output json > ../lint.json || true
           node -e '
             const t = require("fs").readFileSync("../lint.json", "utf8"), r = JSON.parse(t.slice(t.indexOf("{")));
             console.log(`web-ext lint: ${r.summary.errors} erro(s), ${r.summary.warnings} aviso(s)`);
             for (const [tipo, nivel] of [["errors", "error"], ["warnings", "warning"]])
               for (const m of r[tipo]) console.log(`::${nivel} title=${m.code}::${m.file || ""}${m.line ? ":" + m.line : ""} ${m.message}`);' || true
-          (cd ../firefox && zip -qr ../manga-tradutor-firefox.zip .)
-      - name: Assinar para o Firefox
+          (cd ../mobile && zip -qr ../manga-tradutor-extensao-mobile.zip .)
+      - name: Assinar a Extensão Mobile para o Firefox
         if: env.AMO_JWT_ISSUER != ''
         continue-on-error: true # a mesma versão só pode ser assinada uma vez
-        run: npx --yes web-ext@8 sign --source-dir ../firefox --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --artifacts-dir ../assinado
+        run: npx --yes web-ext@8 sign --source-dir ../mobile --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET" --artifacts-dir ../assinado
       - name: Publicar extensão em Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSAO=$(node -p "require('./manifest.json').version")
           zip -r ../manga-tradutor-extensao.zip . -x 'tradutor.test.mjs'
-          ARQUIVOS="../manga-tradutor-extensao.zip ../manga-tradutor-firefox.zip"
+          ARQUIVOS="../manga-tradutor-extensao.zip ../manga-tradutor-extensao-mobile.zip"
           XPI=$(ls ../assinado/*.xpi 2>/dev/null | head -1 || true)
-          if [ -n "$XPI" ]; then cp "$XPI" ../manga-tradutor-firefox.xpi; ARQUIVOS="$ARQUIVOS ../manga-tradutor-firefox.xpi"
+          if [ -n "$XPI" ]; then cp "$XPI" ../manga-tradutor-extensao-mobile.xpi; ARQUIVOS="$ARQUIVOS ../manga-tradutor-extensao-mobile.xpi"
           # não assinou agora (versão repetida): mantém o .xpi assinado que já estava publicado
-          elif gh release download extensao -p manga-tradutor-firefox.xpi -D .. 2>/dev/null; then ARQUIVOS="$ARQUIVOS ../manga-tradutor-firefox.xpi"; fi
+          elif gh release download extensao -p manga-tradutor-extensao-mobile.xpi -D .. 2>/dev/null; then ARQUIVOS="$ARQUIVOS ../manga-tradutor-extensao-mobile.xpi"; fi
           gh release delete extensao --yes --cleanup-tag || true
           # "versao=" nas notas é o que o popup lê para avisar que saiu versão nova
           gh release create extensao $ARQUIVOS --title "Extensão – última versão (v$VERSAO)" --notes "versao=$VERSAO · gerado do commit ${{ github.sha }}" --target ${{ github.sha }} --latest=false

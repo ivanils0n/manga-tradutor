@@ -180,6 +180,7 @@ if (!window.__mangaTradutor) {
     }
 
     function receber(m) {
+      if (m.tipo === "aviso") return aviso(m.msg, "info");
       const p = pedidos.get(m.rid);
       if (!p) return;
       if (m.tipo === "capturado") return mostrarCamada();
@@ -474,7 +475,7 @@ if (!window.__mangaTradutor) {
       d.replaceChildren();
       if (!tipo) d.appendChild(Object.assign(document.createElement("span"), { className: "roda" }));
       d.appendChild(document.createTextNode(texto));
-      if (tipo) timerAviso = setTimeout(() => d.remove(), tipo === "erro" ? 6000 : 2200);
+      if (tipo) timerAviso = setTimeout(() => d.remove(), tipo === "erro" ? 6000 : texto.length > 40 ? 4500 : 2200);
     }
     const fecharAviso = () => raiz?.querySelector(".aviso:not(.erro)")?.remove();
 
@@ -796,8 +797,10 @@ if (!window.__mangaTradutor) {
       clearTimeout(timerBotao);
       timerBotao = setTimeout(() => {
         if (pref.semBotao?.[site]) return mostrarBotao(false);
-        // só aparece em página que parece leitor de mangá, não em todo site
-        if (!botao && [...document.querySelectorAll("img, canvas")].some((el) => pareceManga(el, el.getBoundingClientRect()))) mostrarBotao(true);
+        // só aparece em página que parece leitor de mangá, não em todo site. O tamanho do arquivo é
+        // conferido antes do da tela: medir a tela força o navegador a recalcular a página (pesa no celular)
+        const grande = (el) => (el.naturalWidth ?? el.width) >= 300 && (el.naturalHeight ?? el.height) >= 300;
+        if (!botao && [...document.querySelectorAll("img, canvas")].some((el) => grande(el) && pareceManga(el, el.getBoundingClientRect()))) mostrarBotao(true);
       }, 400);
     }
     async function mostrarBotao(sim) {
